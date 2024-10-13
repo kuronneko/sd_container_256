@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Observers\AlbumObserver;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -15,4 +16,10 @@ class Album extends Model
     protected $casts = [
         'images' => 'array',
     ];
+
+    public function getRandomImageAttribute()
+    {
+        $images = $this->images;
+        return $images ? $images[array_rand($images)] : null;
+    }
 }

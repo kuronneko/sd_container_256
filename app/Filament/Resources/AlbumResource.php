@@ -10,6 +10,7 @@ use Filament\Tables\Table;
 use Filament\Resources\Resource;
 use Filament\Forms\Components\Fieldset;
 use Filament\Forms\Components\ViewField;
+use Filament\Tables\Columns\ImageColumn;
 use Filament\Forms\Components\FileUpload;
 use Illuminate\Database\Eloquent\Builder;
 use App\Filament\Resources\AlbumResource\Pages;
@@ -43,13 +44,8 @@ class AlbumResource extends Resource
                         return "albums/temp";
                     })
                     ->maxFiles(10)
+                    ->columnSpanFull()
                     ->reorderable(),
-
-
-                /*                 ViewField::make('imagenes')
-                    ->view('filament.resources.img_instalacion.views.img_instalacion_edit') */
-
-
             ]);
     }
 
@@ -60,7 +56,17 @@ class AlbumResource extends Resource
                 Tables\Columns\TextColumn::make('id')
                     ->searchable()
                     ->sortable()
-                    ->label('Album'),
+                    ->label('ID'),
+                Tables\Columns\TextColumn::make('text')
+                    ->searchable()
+                    ->label('Prompt'),
+                ImageColumn::make('images')
+                    ->label('Images')
+                    ->square()
+                    ->stacked()
+                    ->wrap()
+                    ->limitedRemainingText()
+                    ->limit(10),
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
