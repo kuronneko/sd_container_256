@@ -15,12 +15,4 @@ class Album extends Model
     protected $casts = [
         'images' => 'array',
     ];
-
-        /**
-     * Define a relationship with the Imagen model.
-     */
-/*     public function imagenes(): MorphMany
-    {
-        return $this->morphMany(Imagen::class, 'imageable');
-    } */
 }
