@@ -23,8 +23,8 @@ class CreateAlbum extends CreateRecord
         $newDirectory = "albums/{$this->record->id}";
 
         // Create the new directory if it doesn't exist
-        if (!is_dir($newDirectory)) {
-            mkdir(public_path('/storage/' . $newDirectory), 0755, true);
+        if (!Storage::disk('public')->exists($newDirectory)) {
+            Storage::disk('public')->makeDirectory($newDirectory, 0755, true);
         }
 
         // Process each image
@@ -32,8 +32,11 @@ class CreateAlbum extends CreateRecord
             // Define the new path for the image
             $newPath = "{$newDirectory}/" . basename($image);
 
-            if (!file_exists(public_path('/storage/albums/temp/' . $this->record->id))) {
-                rename(public_path('/storage/albums/temp/' . basename($image)), public_path('/storage/albums/' . $this->record->id . '/' . basename($image)));
+            if (!Storage::disk('public')->exists('albums/temp/' . $this->record->id)) {
+                Storage::disk('public')->move(
+                    'albums/temp/' . basename($image),
+                    'albums/' . $this->record->id . '/' . basename($image)
+                );
             }
 
             // Update the image path
