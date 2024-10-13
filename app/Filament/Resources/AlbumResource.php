@@ -1,0 +1,102 @@
+<?php
+
+namespace App\Filament\Resources;
+
+use Filament\Forms;
+use Filament\Tables;
+use App\Models\Album;
+use Filament\Forms\Form;
+use Filament\Tables\Table;
+use Filament\Resources\Resource;
+use Filament\Forms\Components\Fieldset;
+use Filament\Forms\Components\ViewField;
+use Filament\Forms\Components\FileUpload;
+use Illuminate\Database\Eloquent\Builder;
+use App\Filament\Resources\AlbumResource\Pages;
+use Illuminate\Database\Eloquent\SoftDeletingScope;
+use App\Filament\Resources\AlbumResource\RelationManagers;
+
+class AlbumResource extends Resource
+{
+    protected static ?string $model = Album::class;
+
+    protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
+
+    public static function form(Form $form): Form
+    {
+        return $form
+            ->schema([
+                Forms\Components\Textarea::make('text')
+                    ->required()
+                    ->columnSpanFull(),
+
+                FileUpload::make('images')
+                    ->image()
+                    ->multiple()
+                    ->panelLayout('grid')
+                    ->openable()
+                    ->downloadable()
+                    ->directory(function ($record) {
+                        if ($record) {
+                            return "albums/{$record->id}";
+                        }
+                        return "albums/temp";
+                    })
+                    ->maxFiles(10)
+                    ->reorderable(),
+
+
+                /*                 ViewField::make('imagenes')
+                    ->view('filament.resources.img_instalacion.views.img_instalacion_edit') */
+
+
+            ]);
+    }
+
+    public static function table(Table $table): Table
+    {
+        return $table
+            ->columns([
+                Tables\Columns\TextColumn::make('id')
+                    ->searchable()
+                    ->sortable()
+                    ->label('Album'),
+                Tables\Columns\TextColumn::make('created_at')
+                    ->dateTime()
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+                Tables\Columns\TextColumn::make('updated_at')
+                    ->dateTime()
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+            ])
+            ->filters([
+                //
+            ])
+            ->actions([
+                Tables\Actions\DeleteAction::make(),
+                Tables\Actions\EditAction::make(),
+            ])
+            ->bulkActions([
+                Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\DeleteBulkAction::make(),
+                ]),
+            ]);
+    }
+
+    public static function getRelations(): array
+    {
+        return [
+            //
+        ];
+    }
+
+    public static function getPages(): array
+    {
+        return [
+            'index' => Pages\ListAlbums::route('/'),
+            'create' => Pages\CreateAlbum::route('/create'),
+            'edit' => Pages\EditAlbum::route('/{record}/edit'),
+        ];
+    }
+}
