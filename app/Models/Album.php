@@ -22,4 +22,18 @@ class Album extends Model
         $images = $this->images;
         return $images ? $images[array_rand($images)] : null;
     }
+
+
+    public function getThumbnailUrlsAttribute()
+    {
+        $images = $this->images;
+
+        $thumbnails = [];
+
+        foreach ($images as $image) {
+            $thumbnails[] = "albums/{$this->id}/thumbnails/" . basename($image);
+        }
+
+        return $thumbnails;
+    }
 }

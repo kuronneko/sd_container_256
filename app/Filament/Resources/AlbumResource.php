@@ -63,7 +63,7 @@ class AlbumResource extends Resource
                     ->label('Prompt')
                     ->limit(100)
                     ->wrap(),
-                ImageColumn::make('images')
+                ImageColumn::make('thumbnail_urls')
                     ->label('Images')
                     ->square()
                     ->stacked()

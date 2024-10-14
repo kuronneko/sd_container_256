@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\AlbumResource\Pages;
 
+use Exception;
 use App\Models\Album;
 use Filament\Actions;
 use App\Models\Imagen;
@@ -9,10 +10,29 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use App\Filament\Resources\AlbumResource;
 use Filament\Resources\Pages\CreateRecord;
+use Intervention\Image\Laravel\Facades\Image as InterventionImage;
 
 class CreateAlbum extends CreateRecord
 {
     protected static string $resource = AlbumResource::class;
+
+    public function generateThumbNail($mainNewDirectory, $mainImageUrl)
+    {
+        $thumbnailDirectory = "{$mainNewDirectory}/thumbnails";
+        $thumbnailFileName = "{$thumbnailDirectory}/" . basename($mainImageUrl);
+
+        if (!Storage::disk('public')->exists($thumbnailDirectory)) {
+            Storage::disk('public')->makeDirectory($thumbnailDirectory, 0755, true);
+        }
+
+        $imageContent = Storage::disk('public')->get($mainImageUrl);
+
+        $image = InterventionImage::read($imageContent);
+
+        $image->cover(200, 200);
+
+        $image->save(public_path('/storage/' . $thumbnailFileName));
+    }
 
     public function afterCreate(): void
     {
@@ -38,9 +58,10 @@ class CreateAlbum extends CreateRecord
                     'albums/' . $this->record->id . '/' . basename($image)
                 );
             }
-
             // Update the image path
             $image = $newPath;
+
+            self::generateThumbNail($newDirectory, $image);
         }
 
         // Save the updated paths back to the JSON column
