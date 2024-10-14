@@ -22,7 +22,7 @@ class EditAlbum extends EditRecord
     protected function afterSave(): void
     {
         foreach ($this->record->images as $image) {
-            ImageService::generateThumbNail("albums/{$this->record->id}", $image);
+            ImageService::generateThumbnail("albums/{$this->record->id}", $image);
         }
 
         ImageService::deleteAllImagesWhoAreNotInJsonFromStorage($this->record);

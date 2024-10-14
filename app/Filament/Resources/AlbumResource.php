@@ -30,6 +30,7 @@ class AlbumResource extends Resource
                 FileUpload::make('images')
                     ->image()
                     ->required()
+                    ->imageEditor()
                     ->multiple()
                     ->panelLayout('grid')
                     ->openable()

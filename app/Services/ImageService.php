@@ -40,7 +40,7 @@ class ImageService
             // Update the image path
             $image = $newPath;
 
-            self::generateThumbNail($newDirectory, $image);
+            self::generateThumbnail($newDirectory, $image);
         }
 
         // Save the updated paths back to the JSON column
@@ -48,7 +48,7 @@ class ImageService
         $album->save();
     }
 
-    public static function generateThumbNail($mainNewDirectory, $mainImageUrl)
+    public static function generateThumbnail($mainNewDirectory, $mainImageUrl)
     {
         $thumbnailDirectory = "{$mainNewDirectory}/thumbnails";
         $thumbnailFileName = "{$thumbnailDirectory}/" . basename($mainImageUrl);
