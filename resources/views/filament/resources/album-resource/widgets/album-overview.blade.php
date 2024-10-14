@@ -27,7 +27,7 @@
                         {{ $album->id }}
                     </p>
                     <div class="flex flex-wrap justify-center gap-4">
-                        @foreach ($album->thumbnail_urls as $thumbnail)
+                        @foreach (collect($album->thumbnail_urls)->take(3) as $thumbnail)
                             <div class="flex justify-center">
                                 <img src="{{ asset('storage/' . $thumbnail) }}" alt="Album Thumbnail"
                                     class="max-w-full h-auto" style="max-width: 100px; max-height: 100px;" />
