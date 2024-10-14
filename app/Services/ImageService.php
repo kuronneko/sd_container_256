@@ -9,6 +9,10 @@ use Intervention\Image\Laravel\Facades\Image as InterventionImage;
 
 class ImageService
 {
+    //Is used because i want to save all images in a folder with the album ID
+    //In creating a new album, the images are saved in the temp folder
+    //When the album is saved, the images are moved from the temp folder to the album folder
+    //The images are also saved in the database as a JSON column
     public static function moveImagesFromTempFolderToIdAlbumFolder(Album $album)
     {
         // Ensure $this->record->images is a string before decoding
@@ -43,6 +47,7 @@ class ImageService
         $album->images = ($images);
         $album->save();
     }
+
     public static function generateThumbNail($mainNewDirectory, $mainImageUrl)
     {
         $thumbnailDirectory = "{$mainNewDirectory}/thumbnails";
@@ -63,6 +68,8 @@ class ImageService
         }
     }
 
+    //Used for deleting images that are not in the record's images (the filament component delete the url from the json array, but not from the storage)
+    //This is used when updating an album
     public static function deleteAllImagesWhoAreNotInJsonFromStorage(Album $album)
     {
         $images = array_map(function ($image) {
