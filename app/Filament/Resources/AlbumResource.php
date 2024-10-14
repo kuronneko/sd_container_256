@@ -27,10 +27,6 @@ class AlbumResource extends Resource
     {
         return $form
             ->schema([
-                Forms\Components\Textarea::make('prompt')
-                    ->required()
-                    ->columnSpanFull(),
-
                 FileUpload::make('images')
                     ->image()
                     ->required()
@@ -47,6 +43,11 @@ class AlbumResource extends Resource
                     ->maxFiles(10)
                     ->columnSpanFull()
                     ->reorderable(),
+
+                Forms\Components\Textarea::make('prompt')
+                    ->required()
+                    ->autosize()
+                    ->columnSpanFull(),
             ]);
     }
 
@@ -61,30 +62,34 @@ class AlbumResource extends Resource
                 Tables\Columns\TextColumn::make('prompt')
                     ->searchable()
                     ->label('Prompt')
-                    ->limit(100)
-                    ->wrap(),
+                    ->limit(50),
                 ImageColumn::make('thumbnail_urls')
                     ->label('Images')
                     ->square()
                     ->stacked()
-                    ->wrap()
                     ->limitedRemainingText()
-                    ->limit(10),
+                    ->limit(3),
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable(),
-                    //->toggleable(isToggledHiddenByDefault: true),
+                //->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\TextColumn::make('updated_at')
                     ->dateTime()
                     ->sortable(),
-                    //->toggleable(isToggledHiddenByDefault: true),
+                //->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
                 //
             ])
             ->actions([
-                Tables\Actions\EditAction::make(),
+                Tables\Actions\ViewAction::make()
+                    ->modalHeading(fn($record) => "ID: " . $record->id)
+                    ->label(''),
+                Tables\Actions\EditAction::make()
+                    ->label(''),
             ])
+            ->recordAction(Tables\Actions\ViewAction::class)
+            ->recordUrl(null)
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
