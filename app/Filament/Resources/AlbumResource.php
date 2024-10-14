@@ -27,12 +27,13 @@ class AlbumResource extends Resource
     {
         return $form
             ->schema([
-                Forms\Components\Textarea::make('text')
+                Forms\Components\Textarea::make('prompt')
                     ->required()
                     ->columnSpanFull(),
 
                 FileUpload::make('images')
                     ->image()
+                    ->required()
                     ->multiple()
                     ->panelLayout('grid')
                     ->openable()
@@ -57,9 +58,11 @@ class AlbumResource extends Resource
                     ->searchable()
                     ->sortable()
                     ->label('ID'),
-                Tables\Columns\TextColumn::make('text')
+                Tables\Columns\TextColumn::make('prompt')
                     ->searchable()
-                    ->label('Prompt'),
+                    ->label('Prompt')
+                    ->limit(100)
+                    ->wrap(),
                 ImageColumn::make('images')
                     ->label('Images')
                     ->square()
@@ -69,18 +72,17 @@ class AlbumResource extends Resource
                     ->limit(10),
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
-                    ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->sortable(),
+                    //->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\TextColumn::make('updated_at')
                     ->dateTime()
-                    ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->sortable(),
+                    //->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
                 //
             ])
             ->actions([
-                Tables\Actions\DeleteAction::make(),
                 Tables\Actions\EditAction::make(),
             ])
             ->bulkActions([

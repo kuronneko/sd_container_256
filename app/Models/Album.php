@@ -11,7 +11,7 @@ class Album extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['text', 'images'];
+    protected $fillable = ['prompt', 'images'];
 
     protected $casts = [
         'images' => 'array',
