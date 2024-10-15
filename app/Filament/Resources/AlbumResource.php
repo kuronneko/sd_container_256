@@ -83,14 +83,14 @@ class AlbumResource extends Resource
                 //
             ])
             ->actions([
-                Tables\Actions\ViewAction::make()
+                 Tables\Actions\ViewAction::make()
                     ->modalHeading(fn($record) => "ID: " . $record->id)
                     ->label(''),
                 Tables\Actions\EditAction::make()
                     ->label(''),
             ])
-            ->recordAction(Tables\Actions\ViewAction::class)
-            ->recordUrl(null)
+/*             ->recordAction(Tables\Actions\ViewAction::class)
+            ->recordUrl(null) */
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
@@ -111,6 +111,7 @@ class AlbumResource extends Resource
             'index' => Pages\ListAlbums::route('/'),
             'create' => Pages\CreateAlbum::route('/create'),
             'edit' => Pages\EditAlbum::route('/{record}/edit'),
+            'view' => Pages\ViewAlbum::route('/{record}'),
         ];
     }
 }
