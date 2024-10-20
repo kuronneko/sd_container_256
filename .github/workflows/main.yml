@@ -1,0 +1,48 @@
+name: Deploy to DigitalOcean
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up SSH
+      env:
+        SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+      run: |
+        mkdir -p ~/.ssh
+        echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H ${{ secrets.DIGITALOCEAN_HOST }} >> ~/.ssh/known_hosts
+
+    - name: Deploy files to DigitalOcean
+      env:
+        USER: ${{ secrets.DIGITALOCEAN_USER }}
+        HOST: ${{ secrets.DIGITALOCEAN_HOST }}
+        PORT: ${{ secrets.DIGITALOCEAN_PORT }}
+        REMOTE_DIR: /var/www/sd/public
+      run: |
+        rsync -avz -e "ssh -p $PORT" ./ $USER@$HOST:$REMOTE_DIR
+
+    - name: Install dependencies
+      env:
+        USER: ${{ secrets.DIGITALOCEAN_USER }}
+        HOST: ${{ secrets.DIGITALOCEAN_HOST }}
+        PORT: ${{ secrets.DIGITALOCEAN_PORT }}
+      run: |
+        ssh -p $PORT $USER@$HOST "cd /var/www/sd && composer install --no-interaction --prefer-dist --optimize-autoloader"
+
+    - name: Run migrations
+      env:
+        USER: ${{ secrets.DIGITALOCEAN_USER }}
+        HOST: ${{ secrets.DIGITALOCEAN_HOST }}
+        PORT: ${{ secrets.DIGITALOCEAN_PORT }}
+      run: |
+        ssh -p $PORT $USER@$HOST "cd /var/www/sd && php artisan migrate --force"
