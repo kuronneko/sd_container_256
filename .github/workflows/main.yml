@@ -20,6 +20,7 @@ jobs:
         mkdir -p ~/.ssh
         echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
         chmod 600 ~/.ssh/id_rsa
+        # Add the DigitalOcean host key to known_hosts
         ssh-keyscan -H ${{ secrets.DIGITALOCEAN_HOST }} >> ~/.ssh/known_hosts
 
     - name: Deploy files to DigitalOcean
@@ -29,4 +30,5 @@ jobs:
         PORT: ${{ secrets.DIGITALOCEAN_PORT }}
         REMOTE_DIR: ${{ secrets.DIGITALOCEAN_REMOTE_DIR_SD }}
       run: |
+        # Use rsync to deploy the files over SSH
         rsync -avz -e "ssh -p $PORT" ./ $USER@$HOST:$REMOTE_DIR
