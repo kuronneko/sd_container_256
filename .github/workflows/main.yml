@@ -21,6 +21,7 @@ jobs:
         echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
         chmod 600 ~/.ssh/id_rsa
         ssh-keyscan -H ${{ secrets.DIGITALOCEAN_HOST }} >> ~/.ssh/known_hosts
+
     - name: Deploy files to DigitalOcean
       env:
         USER: ${{ secrets.DIGITALOCEAN_USER }}
@@ -28,4 +29,32 @@ jobs:
         PORT: ${{ secrets.DIGITALOCEAN_PORT }}
         REMOTE_DIR: ${{ secrets.DIGITALOCEAN_REMOTE_DIR_CBPW_MAIN }}
       run: |
-        rsync -avz -e "ssh -p $PORT" ./ $USER@$HOST:$REMOTE_DIR
+        rsync -avz --exclude='vendor' --exclude='.env' -e "ssh -p $PORT" ./ $USER@$HOST:$REMOTE_DIR
+
+    - name: Install dependencies on server
+      env:
+        USER: ${{ secrets.DIGITALOCEAN_USER }}
+        HOST: ${{ secrets.DIGITALOCEAN_HOST }}
+        PORT: ${{ secrets.DIGITALOCEAN_PORT }}
+        REMOTE_DIR: ${{ secrets.DIGITALOCEAN_REMOTE_DIR_CBPW_MAIN }}
+      run: |
+        ssh -p $PORT $USER@$HOST "cd $REMOTE_DIR && composer install --no-dev --optimize-autoloader"
+
+    - name: Set file permissions
+      env:
+        USER: ${{ secrets.DIGITALOCEAN_USER }}
+        HOST: ${{ secrets.DIGITALOCEAN_HOST }}
+        PORT: ${{ secrets.DIGITALOCEAN_PORT }}
+        REMOTE_DIR: ${{ secrets.DIGITALOCEAN_REMOTE_DIR_CBPW_MAIN }}
+      run: |
+        ssh -p $PORT $USER@$HOST "cd $REMOTE_DIR && sudo chmod -R 775 storage bootstrap/cache"
+
+    - name: Clear and cache Laravel config
+      env:
+        USER: ${{ secrets.DIGITALOCEAN_USER }}
+        HOST: ${{ secrets.DIGITALOCEAN_HOST }}
+        PORT: ${{ secrets.DIGITALOCEAN_PORT }}
+        REMOTE_DIR: ${{ secrets.DIGITALOCEAN_REMOTE_DIR_CBPW_MAIN }}
+      run: |
+        ssh -p $PORT $USER@$HOST "cd $REMOTE_DIR && php artisan config:cache && php artisan route:cache && php artisan view:cache"
+
