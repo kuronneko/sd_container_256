@@ -26,12 +26,6 @@ jobs:
       - name: Install Composer dependencies
         run: composer install --no-dev --no-progress --prefer-dist --optimize-autoloader
 
-      - name: Generate application key
-        run: php artisan key:generate
-        env:
-          APP_ENV: production
-          APP_KEY: ${{ secrets.APP_KEY }}
-
       - name: Set up SSH
         uses: webfactory/ssh-agent@v0.5.3
         with:
