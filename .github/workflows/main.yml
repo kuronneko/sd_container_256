@@ -10,24 +10,22 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+    - name: Checkout code
+      uses: actions/checkout@v3
 
-      - name: Set up SSH
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          HOST: ${{ secrets.DIGITALOCEAN_HOST }}
-        run: |
-          mkdir -p ~/.ssh
-          echo "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H $HOST >> ~/.ssh/known_hosts
-
-      - name: Deploy files to DigitalOcean
-        env:
-          USER: ${{ secrets.DIGITALOCEAN_USER }}
-          HOST: ${{ secrets.DIGITALOCEAN_HOST }}
-          PORT: ${{ secrets.DIGITALOCEAN_PORT }}
-          REMOTE_DIR: /var/www/sd
-        run: |
-          rsync -avz -e "ssh -p $PORT" ./ $USER@$HOST:$REMOTE_DIR
+    - name: Set up SSH
+      env:
+        SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+      run: |
+        mkdir -p ~/.ssh
+        echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H ${{ secrets.DIGITALOCEAN_HOST }} >> ~/.ssh/known_hosts
+    - name: Deploy files to DigitalOcean
+      env:
+        USER: ${{ secrets.DIGITALOCEAN_USER }}
+        HOST: ${{ secrets.DIGITALOCEAN_HOST }}
+        PORT: ${{ secrets.DIGITALOCEAN_PORT }}
+        REMOTE_DIR: /var/www/sd
+      run: |
+        rsync -avz -e "ssh -p $PORT" ./ $USER@$HOST:$REMOTE_DIR
