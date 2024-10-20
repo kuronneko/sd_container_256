@@ -29,7 +29,7 @@ jobs:
         PORT: ${{ secrets.DIGITALOCEAN_PORT }}
         REMOTE_DIR: ${{ secrets.DIGITALOCEAN_REMOTE_DIR_SD }}
       run: |
-        rsync -avz -e "ssh -p $PORT" --exclude="node_modules" --exclude="storage/logs" --exclude="vendor" ./ $USER@$HOST:$REMOTE_DIR
+        rsync -avz -e "ssh -p $PORT" --exclude="node_modules" --exclude="storage/logs" --exclude="vendor" --delete ./ $USER@$HOST:$REMOTE_DIR
 
     - name: Install dependencies
       env:
