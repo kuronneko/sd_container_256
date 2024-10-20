@@ -27,7 +27,7 @@ jobs:
         USER: ${{ secrets.DIGITALOCEAN_USER }}
         HOST: ${{ secrets.DIGITALOCEAN_HOST }}
         PORT: ${{ secrets.DIGITALOCEAN_PORT }}
-        REMOTE_DIR: ${{ secrets.DIGITALOCEAN_REMOTE_DIR_CBPW_MAIN }}
+        REMOTE_DIR: ${{ secrets.DIGITALOCEAN_REMOTE_DIR_SD }}
       run: |
         rsync -avz -e "ssh -p $PORT" --exclude="node_modules" --exclude="storage/logs" --exclude="vendor" ./ $USER@$HOST:$REMOTE_DIR
 
@@ -36,7 +36,7 @@ jobs:
         USER: ${{ secrets.DIGITALOCEAN_USER }}
         HOST: ${{ secrets.DIGITALOCEAN_HOST }}
         PORT: ${{ secrets.DIGITALOCEAN_PORT }}
-        REMOTE_DIR: ${{ secrets.DIGITALOCEAN_REMOTE_DIR_CBPW_MAIN }}
+        REMOTE_DIR: ${{ secrets.DIGITALOCEAN_REMOTE_DIR_SD }}
       run: |
         ssh -p $PORT $USER@$HOST "cd $REMOTE_DIR && composer install --no-dev --prefer-dist --optimize-autoloader"
 
@@ -45,7 +45,7 @@ jobs:
         USER: ${{ secrets.DIGITALOCEAN_USER }}
         HOST: ${{ secrets.DIGITALOCEAN_HOST }}
         PORT: ${{ secrets.DIGITALOCEAN_PORT }}
-        REMOTE_DIR: ${{ secrets.DIGITALOCEAN_REMOTE_DIR_CBPW_MAIN }}
+        REMOTE_DIR: ${{ secrets.DIGITALOCEAN_REMOTE_DIR_SD }}
       run: |
         ssh -p $PORT $USER@$HOST "cd $REMOTE_DIR && sudo chown -R www-data:www-data storage bootstrap/cache && sudo chmod -R 775 storage bootstrap/cache"
 
@@ -54,7 +54,7 @@ jobs:
         USER: ${{ secrets.DIGITALOCEAN_USER }}
         HOST: ${{ secrets.DIGITALOCEAN_HOST }}
         PORT: ${{ secrets.DIGITALOCEAN_PORT }}
-        REMOTE_DIR: ${{ secrets.DIGITALOCEAN_REMOTE_DIR_CBPW_MAIN }}
+        REMOTE_DIR: ${{ secrets.DIGITALOCEAN_REMOTE_DIR_SD }}
       run: |
         ssh -p $PORT $USER@$HOST "cd $REMOTE_DIR && php artisan migrate --force"
 
