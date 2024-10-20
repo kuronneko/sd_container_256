@@ -1,4 +1,4 @@
-name: Deploy Laravel 11 Application
+name: Deploy to DigitalOcean
 
 on:
   push:
@@ -7,32 +7,26 @@ on:
 
 jobs:
   deploy:
-    name: Deploy to DigitalOcean
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+    - name: Checkout code
+      uses: actions/checkout@v3
 
-      - name: Set up PHP 8.3
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.3'
-          extensions: mbstring, bcmath, pdo_mysql
-          ini-values: |
-            memory_limit=1G
-          coverage: none
+    - name: Set up SSH
+      env:
+        SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+      run: |
+        mkdir -p ~/.ssh
+        echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H ${{ secrets.DIGITALOCEAN_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Install Composer dependencies
-        run: composer install --no-dev --no-progress --prefer-dist --optimize-autoloader
-
-      - name: Set up SSH
-        uses: webfactory/ssh-agent@v0.5.3
-        with:
-          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY_SD }}
-
-      - name: Deploy application via rsync
-        run: |
-          rsync -avz --delete \
-          -e "ssh -p ${{ secrets.DIGITALOCEAN_PORT }}" \
-          ./ ${{ secrets.DIGITALOCEAN_USER }}@${{ secrets.DIGITALOCEAN_HOST }}:${{ secrets.DIGITALOCEAN_REMOTE_DIR_SD }}
+    - name: Deploy files to DigitalOcean
+      env:
+        USER: ${{ secrets.DIGITALOCEAN_USER }}
+        HOST: ${{ secrets.DIGITALOCEAN_HOST }}
+        PORT: ${{ secrets.DIGITALOCEAN_PORT }}
+        REMOTE_DIR: ${{ secrets.DIGITALOCEAN_REMOTE_DIR_SD }}
+      run: |
+        rsync -avz -e "ssh -p $PORT" ./ $USER@$HOST:$REMOTE_DIR
