@@ -28,6 +28,6 @@ jobs:
           USER: ${{ secrets.DIGITALOCEAN_USER }}
           HOST: ${{ secrets.DIGITALOCEAN_HOST }}
           PORT: ${{ secrets.DIGITALOCEAN_PORT }}
-          REMOTE_DIR: /var/www/sd/public
+          REMOTE_DIR: /var/www/sd
         run: |
           rsync -avz -e "ssh -p $PORT" ./ $USER@$HOST:$REMOTE_DIR
