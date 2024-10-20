@@ -1,4 +1,4 @@
-name: Deploy Laravel to DigitalOcean
+name: Deploy to DigitalOcean
 
 on:
   push:
@@ -29,39 +29,4 @@ jobs:
         PORT: ${{ secrets.DIGITALOCEAN_PORT }}
         REMOTE_DIR: ${{ secrets.DIGITALOCEAN_REMOTE_DIR_SD }}
       run: |
-        rsync -avz -e "ssh -p $PORT" --exclude="node_modules" --exclude="storage/logs" --exclude="vendor" --delete ./ $USER@$HOST:$REMOTE_DIR
-
-    - name: Install dependencies
-      env:
-        USER: ${{ secrets.DIGITALOCEAN_USER }}
-        HOST: ${{ secrets.DIGITALOCEAN_HOST }}
-        PORT: ${{ secrets.DIGITALOCEAN_PORT }}
-        REMOTE_DIR: ${{ secrets.DIGITALOCEAN_REMOTE_DIR_SD }}
-      run: |
-        ssh -p $PORT $USER@$HOST "cd $REMOTE_DIR && composer install --no-dev --prefer-dist --optimize-autoloader"
-
-    - name: Set permissions
-      env:
-        USER: ${{ secrets.DIGITALOCEAN_USER }}
-        HOST: ${{ secrets.DIGITALOCEAN_HOST }}
-        PORT: ${{ secrets.DIGITALOCEAN_PORT }}
-        REMOTE_DIR: ${{ secrets.DIGITALOCEAN_REMOTE_DIR_SD }}
-      run: |
-        ssh -p $PORT $USER@$HOST "cd $REMOTE_DIR && sudo chown -R www-data:www-data storage bootstrap/cache && sudo chmod -R 775 storage bootstrap/cache"
-
-    - name: Run migrations
-      env:
-        USER: ${{ secrets.DIGITALOCEAN_USER }}
-        HOST: ${{ secrets.DIGITALOCEAN_HOST }}
-        PORT: ${{ secrets.DIGITALOCEAN_PORT }}
-        REMOTE_DIR: ${{ secrets.DIGITALOCEAN_REMOTE_DIR_SD }}
-      run: |
-        ssh -p $PORT $USER@$HOST "cd $REMOTE_DIR && php artisan migrate --force"
-
-    - name: Restart PHP-FPM
-      env:
-        USER: ${{ secrets.DIGITALOCEAN_USER }}
-        HOST: ${{ secrets.DIGITALOCEAN_HOST }}
-        PORT: ${{ secrets.DIGITALOCEAN_PORT }}
-      run: |
-        ssh -p $PORT $USER@$HOST "sudo systemctl restart php8.3-fpm"
+        rsync -avz -e "ssh -p $PORT" ./ $USER@$HOST:$REMOTE_DIR
