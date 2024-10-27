@@ -1,4 +1,4 @@
-name: Deploy from Laravel to DigitalOcean
+name: Deploy to DigitalOcean
 
 on:
   push:
@@ -21,11 +21,12 @@ jobs:
         echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
         chmod 600 ~/.ssh/id_rsa
         ssh-keyscan -H ${{ secrets.DIGITALOCEAN_HOST }} >> ~/.ssh/known_hosts
+
     - name: Deploy files to DigitalOcean
       env:
         USER: ${{ secrets.DIGITALOCEAN_USER }}
         HOST: ${{ secrets.DIGITALOCEAN_HOST }}
         PORT: ${{ secrets.DIGITALOCEAN_PORT }}
-        REMOTE_DIR: ${{ secrets.DIGITALOCEAN_REMOTE_DIR_SD }}
+        REMOTE_DIR: ${{ secrets.DIGITALOCEAN_REMOTE_DIR }}
       run: |
         rsync -avz -e "ssh -p $PORT" ./ $USER@$HOST:$REMOTE_DIR
