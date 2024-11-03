@@ -19,33 +19,65 @@ class ImageService
         $images = $album->images;
 
         // Define the new directory based on the album ID
-        $newDirectory = "albums/{$album->id}";
+        /*         $newDirectory = "albums/{$album->id}";
 
         // Create the new directory if it doesn't exist
         if (!Storage::disk('public')->exists($newDirectory)) {
             Storage::disk('public')->makeDirectory($newDirectory, 0755, true);
         }
-
+ */
         // Process each image
         foreach ($images as &$image) {
-            // Define the new path for the image
-            $newPath = "{$newDirectory}/" . basename($image);
 
-            if (!Storage::disk('public')->exists('albums/temp/' . $album->id)) {
-                Storage::disk('public')->move(
-                    'albums/temp/' . basename($image),
-                    'albums/' . $album->id . '/' . basename($image)
-                );
+            $newPath = self::uploadImageToS3(Storage::disk('public')->path('albums/temp/' . basename($image)), basename($image), $album->id);
+
+            $thumbImage = InterventionImage::read(Storage::disk('public')->path('albums/temp/' . basename($image)));
+            $thumbImage->cover(200, 200);
+
+            // Ensure the directory exists
+            if (!Storage::disk('public')->exists('albums/temp/thumbnails/')) {
+                Storage::disk('public')->makeDirectory('albums/temp/thumbnails/', 0755, true);
             }
+
+            $thumbImage->save(Storage::disk('public')->path('albums/temp/thumbnails/' . basename($image)));
+
+            self::uploadImageToS3(Storage::disk('public')->path('albums/temp/thumbnails/' . basename($image)), basename($image), $album->id, true);
+
             // Update the image path
             $image = $newPath;
-
-            self::generateThumbnail($newDirectory, $image);
         }
 
         // Save the updated paths back to the JSON column
         $album->images = ($images);
         $album->save();
+    }
+
+    public static function uploadImageToS3($imagePath, $fileName, $albumId, $isThumbnail = false)
+    {
+        // Upload the image to S3
+        if ($isThumbnail) {
+            $s3Folder = env('AWS_UPLOAD_FOLDER') . '/' . $albumId . '/thumbnails';
+        } else {
+            $s3Folder = env('AWS_UPLOAD_FOLDER') . '/' . $albumId;
+        }
+
+        $s3Path = Storage::disk('s3')->putFileAs(
+            $s3Folder,
+            new \Illuminate\Http\File($imagePath),
+            $fileName,
+            'public'
+        );
+
+        // Generate the CDN link
+        $cdnLink = str_replace(
+            env('AWS_DEFAULT_REGION') . '.digitaloceanspaces.com',
+            env('AWS_DEFAULT_REGION') . '.cdn.digitaloceanspaces.com',
+            Storage::disk('s3')->url($s3Path)
+        );
+
+        //$cdnLinkWithoutExtension = pathinfo($cdnLink, PATHINFO_DIRNAME) . '/' . pathinfo($cdnLink, PATHINFO_FILENAME);
+
+        return $cdnLink;
     }
 
     public static function generateThumbnail($mainNewDirectory, $mainImageUrl)
