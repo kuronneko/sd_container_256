@@ -35,7 +35,7 @@ class AlbumResource extends Resource
                     ->panelLayout('grid')
                     ->openable()
                     ->downloadable()
-                    ->disk(config('filesystems.default') === 's3' ? 's3' : 'public')
+                    ->disk(config('filesystems.default'))
                     ->directory(function ($record) {
                         $isS3 = config('filesystems.default') === 's3';
                         $uploadFolder = $isS3 ? env('AWS_UPLOAD_FOLDER', 'sd_develop') : '';

@@ -13,7 +13,7 @@ class ImageService
     // Determine disk based on FILESYSTEM_DISK configuration
     protected static function getDisk(): string
     {
-        return config('filesystems.default') === 's3' ? 's3' : 'public';
+        return config('filesystems.default');
     }
 
     // Get upload folder path based on disk

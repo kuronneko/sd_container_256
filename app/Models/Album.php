@@ -6,6 +6,7 @@ use App\Observers\AlbumObserver;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Support\Facades\Storage;
 
 class Album extends Model
 {
@@ -40,9 +41,17 @@ class Album extends Model
                 $thumbnails[] = "{$cdnUrl}/{$path}";
             }
         } else {
-            // Local storage
+            // Local storage - generate URLs
             foreach ($images as $image) {
-                $thumbnails[] = "albums/{$this->id}/thumbnails/" . basename($image);
+                $thumbnailPath = "albums/{$this->id}/thumbnails/" . basename($image);
+                $disk = config('filesystems.default');
+                $diskUrl = config("filesystems.disks.{$disk}.url");
+                if ($diskUrl) {
+                    $thumbnails[] = $diskUrl . '/' . $thumbnailPath;
+                } else {
+                    // Fallback if url is not configured
+                    $thumbnails[] = url('/storage/app/private/' . $thumbnailPath);
+                }
             }
         }
 
