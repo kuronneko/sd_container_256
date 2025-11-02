@@ -28,10 +28,15 @@
                             {{ $album->id }}
                         </p>
                         <div class="flex flex-wrap justify-center gap-4">
-                            @foreach (collect($album->thumbnail_urls)->take(3) as $thumbnail)
+                            @php
+                                $thumbnails = collect($album->thumbnail_urls)->take(3);
+                                $count = $thumbnails->count();
+                                $size = $count === 3 ? '100px' : '200px';
+                            @endphp
+                            @foreach ($thumbnails as $thumbnail)
                                 <div class="flex justify-center">
                                     <img src="{{ $thumbnail }}" alt="Album Thumbnail"
-                                        class="max-w-full h-auto" style="max-width: 100px; max-height: 100px;" />
+                                        class="max-w-full h-auto" style="max-width: {{ $size }}; max-height: {{ $size }};" />
                                 </div>
                             @endforeach
                         </div>
