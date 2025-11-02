@@ -24,6 +24,24 @@ class Album extends Model
         return $images ? $images[array_rand($images)] : null;
     }
 
+    // Get images with full paths for Filament display
+    public function getImagesWithFullPathsAttribute()
+    {
+        $images = $this->images ?? [];
+
+        if (config('filesystems.default') === 's3') {
+            $uploadFolder = config('filesystems.disks.s3.upload_folder', 'sd_develop');
+            return array_map(function ($image) use ($uploadFolder) {
+                // Add back the upload folder prefix if not already present
+                if (strpos($image, $uploadFolder) === false) {
+                    return "{$uploadFolder}/{$image}";
+                }
+                return $image;
+            }, $images);
+        }
+
+        return $images;
+    }
 
     public function getThumbnailUrlsAttribute()
     {
@@ -31,9 +49,9 @@ class Album extends Model
         $thumbnails = [];
 
         if (config('filesystems.default') === 's3') {
-            $uploadFolder = env('AWS_UPLOAD_FOLDER', 'sd_develop');
-            $bucket = env('AWS_BUCKET', 'cbpw');
-            $region = env('AWS_DEFAULT_REGION', 'nyc3');
+            $uploadFolder = config('filesystems.disks.s3.upload_folder', 'sd_develop');
+            $bucket = config('filesystems.disks.s3.bucket');
+            $region = config('filesystems.disks.s3.region');
             $cdnUrl = "https://{$bucket}.{$region}.cdn.digitaloceanspaces.com";
 
             foreach ($images as $image) {

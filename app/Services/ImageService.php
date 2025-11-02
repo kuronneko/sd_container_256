@@ -20,15 +20,29 @@ class ImageService
     protected static function getUploadFolder(): string
     {
         if (config('filesystems.default') === 's3') {
-            return env('AWS_UPLOAD_FOLDER', 'sd_develop');
+            return config('filesystems.disks.s3.upload_folder', 'sd_develop');
         }
         return '';
+    }
+
+    // Normalize image path by removing upload folder prefix if present
+    protected static function normalizePath(string $path, string $disk): string
+    {
+        if ($disk === 's3') {
+            $uploadFolder = self::getUploadFolder();
+            // Remove the upload folder prefix if it exists
+            if (strpos($path, $uploadFolder . '/') === 0) {
+                return substr($path, strlen($uploadFolder) + 1);
+            }
+        }
+        return $path;
     }
 
     //Is used because i want to save all images in a folder with the album ID
     //In creating a new album, the images are saved in the temp folder
     //When the album is saved, the images are moved from the temp folder to the album folder
     //The images are also saved in the database as a JSON column
+    //When editing, new images are in temp folder and need to be moved, old images stay in place
     public static function moveImagesFromTempFolderToIdAlbumFolder(Album $album)
     {
         $disk = self::getDisk();
@@ -49,16 +63,19 @@ class ImageService
             $tempPath = "{$tempDirectory}/{$fileName}";
             $newPath = "{$newDirectory}/{$fileName}";
 
-            // Move image from temp to album folder
+            // Check if image is in temp folder (new upload)
             if (Storage::disk($disk)->exists($tempPath)) {
+                // Move image from temp to album folder
                 Storage::disk($disk)->move($tempPath, $newPath);
+                // Generate thumbnail for newly moved image
+                self::generateThumbnail($newDirectory, $newPath);
+            } else if (Storage::disk($disk)->exists($newPath)) {
+                // Image already in album folder, but check if thumbnail exists
+                self::generateThumbnail($newDirectory, $newPath);
             }
 
-            // Update the image path
-            $image = $newPath;
-
-            // Generate thumbnail
-            self::generateThumbnail($newDirectory, $newPath);
+            // Update the image path - normalize by removing upload folder prefix
+            $image = self::normalizePath($newPath, $disk);
         }
 
         // Save the updated paths back to the JSON column

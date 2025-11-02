@@ -21,10 +21,10 @@ class EditAlbum extends EditRecord
 
     protected function afterSave(): void
     {
-        foreach ($this->record->images as $image) {
-            ImageService::generateThumbnail("albums/{$this->record->id}", $image);
-        }
+        // Move new images from temp folder to album folder and generate thumbnails
+        ImageService::moveImagesFromTempFolderToIdAlbumFolder($this->record);
 
+        // Delete images that were removed
         ImageService::deleteAllImagesWhoAreNotInJsonFromStorage($this->record);
     }
 }

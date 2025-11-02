@@ -16,6 +16,7 @@ use Illuminate\Database\Eloquent\Builder;
 use App\Filament\Resources\AlbumResource\Pages;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use App\Filament\Resources\AlbumResource\RelationManagers;
+use App\Services\ImageService;
 
 class AlbumResource extends Resource
 {
@@ -38,7 +39,7 @@ class AlbumResource extends Resource
                     ->disk(config('filesystems.default'))
                     ->directory(function ($record) {
                         $isS3 = config('filesystems.default') === 's3';
-                        $uploadFolder = $isS3 ? env('AWS_UPLOAD_FOLDER', 'sd_develop') : '';
+                        $uploadFolder = $isS3 ? config('filesystems.disks.s3.upload_folder', 'sd_develop') : '';
 
                         if ($record) {
                             return $isS3
@@ -50,6 +51,35 @@ class AlbumResource extends Resource
                             : "albums/temp";
                     })
                     ->when(config('filesystems.default') === 's3', fn($component) => $component->visibility('public'))
+                    ->formatStateUsing(function ($state) {
+                        // Add back the upload_folder prefix for display when using S3
+                        if (config('filesystems.default') === 's3' && $state) {
+                            $uploadFolder = config('filesystems.disks.s3.upload_folder', 'sd_develop');
+                            $formatted = [];
+                            foreach ((array) $state as $path) {
+                                // Add prefix if not already present
+                                if (strpos($path, $uploadFolder) === false) {
+                                    $formatted[] = "{$uploadFolder}/{$path}";
+                                } else {
+                                    $formatted[] = $path;
+                                }
+                            }
+                            return $formatted;
+                        }
+                        return $state;
+                    })
+                    ->dehydrateStateUsing(function ($state) {
+                        // Normalize paths by removing upload_folder prefix when saving (both create and edit)
+                        if (config('filesystems.default') === 's3' && $state) {
+                            $uploadFolder = config('filesystems.disks.s3.upload_folder', 'sd_develop');
+                            $normalized = [];
+                            foreach ((array) $state as $path) {
+                                $normalized[] = str_replace($uploadFolder . '/', '', $path);
+                            }
+                            return $normalized;
+                        }
+                        return $state;
+                    })
                     ->maxFiles(10)
                     ->columnSpanFull()
                     ->reorderable(),
