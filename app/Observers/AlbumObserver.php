@@ -24,16 +24,24 @@ class AlbumObserver
     }
 
     /**
-     * Handle the Gimnasio "deleting" event.
+     * Handle the Album "deleting" event.
      */
     public function deleting(Album $album): void
     {
-        // Define the directory based on the album ID
-        $directory = "albums/{$album->id}";
+        $disk = config('filesystems.default');
 
-        // Delete the entire directory from the 'public' disk
-        Storage::disk('public')->deleteDirectory($directory);
+        if ($disk === 's3') {
+            // Delete from S3
+            $uploadFolder = config('filesystems.disks.s3.upload_folder', 'sd_develop');
+            $directory = "{$uploadFolder}/albums/{$album->id}";
+            Storage::disk('s3')->deleteDirectory($directory);
+        } else {
+            // Delete from local/public disk
+            $directory = "albums/{$album->id}";
+            Storage::disk($disk)->deleteDirectory($directory);
+        }
     }
+
     /**
      * Handle the Album "deleted" event.
      */
