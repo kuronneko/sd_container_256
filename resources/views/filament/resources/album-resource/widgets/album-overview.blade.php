@@ -31,7 +31,7 @@
                             @foreach (collect($album->thumbnail_urls)->take(3) as $thumbnail)
                                 <div class="flex justify-center">
                                     <img src="{{ $thumbnail }}" alt="Album Thumbnail"
-                                        class="max-w-full h-auto" style="max-width: {{ collect($album->thumbnail_urls)->count() === 3 ? '100px' : '200px' }}; max-height: {{ collect($album->thumbnail_urls)->count() === 3 ? '100px' : '200px' }};" />
+                                        class="max-w-full h-auto" style="max-width: {{ collect($album->thumbnail_urls)->count() === 3 ? '100px' : (collect($album->thumbnail_urls)->count() === 2 ? '150px' : '200px') }}; max-height: {{ collect($album->thumbnail_urls)->count() === 3 ? '100px' : (collect($album->thumbnail_urls)->count() === 2 ? '150px' : '200px') }};" />
                                 </div>
                             @endforeach
                         </div>
