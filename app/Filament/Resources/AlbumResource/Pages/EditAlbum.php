@@ -27,4 +27,9 @@ class EditAlbum extends EditRecord
         // Delete images that were removed
         ImageService::deleteAllImagesWhoAreNotInJsonFromStorage($this->record);
     }
+
+    protected function getRedirectUrl(): string
+    {
+        return $this->getResource()::getUrl('index');
+    }
 }

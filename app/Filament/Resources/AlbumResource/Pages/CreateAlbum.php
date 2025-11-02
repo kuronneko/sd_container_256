@@ -21,4 +21,9 @@ class CreateAlbum extends CreateRecord
     {
         ImageService::moveImagesFromTempFolderToIdAlbumFolder($this->record);
     }
+
+    protected function getRedirectUrl(): string
+    {
+        return $this->getResource()::getUrl('index');
+    }
 }
