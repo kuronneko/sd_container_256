@@ -5,66 +5,103 @@ namespace App\Services;
 use Carbon\Carbon;
 use App\Models\Album;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Log;
 use Intervention\Image\Laravel\Facades\Image as InterventionImage;
 
 class ImageService
 {
+    // Determine disk based on FILESYSTEM_DISK configuration
+    protected static function getDisk(): string
+    {
+        return config('filesystems.default') === 's3' ? 's3' : 'public';
+    }
+
+    // Get upload folder path based on disk
+    protected static function getUploadFolder(): string
+    {
+        if (config('filesystems.default') === 's3') {
+            return env('AWS_UPLOAD_FOLDER', 'sd_develop');
+        }
+        return '';
+    }
+
     //Is used because i want to save all images in a folder with the album ID
     //In creating a new album, the images are saved in the temp folder
     //When the album is saved, the images are moved from the temp folder to the album folder
     //The images are also saved in the database as a JSON column
     public static function moveImagesFromTempFolderToIdAlbumFolder(Album $album)
     {
-        // Ensure $this->record->images is a string before decoding
+        $disk = self::getDisk();
+        $uploadFolder = self::getUploadFolder();
         $images = $album->images;
 
-        // Define the new directory based on the album ID
-        $newDirectory = "albums/{$album->id}";
-
-        // Create the new directory if it doesn't exist
-        if (!Storage::disk('public')->exists($newDirectory)) {
-            Storage::disk('public')->makeDirectory($newDirectory, 0755, true);
+        if ($disk === 's3') {
+            $newDirectory = "{$uploadFolder}/albums/{$album->id}";
+            $tempDirectory = "{$uploadFolder}/albums/temp";
+        } else {
+            $newDirectory = "albums/{$album->id}";
+            $tempDirectory = "albums/temp";
         }
 
         // Process each image
         foreach ($images as &$image) {
-            // Define the new path for the image
-            $newPath = "{$newDirectory}/" . basename($image);
+            $fileName = basename($image);
+            $tempPath = "{$tempDirectory}/{$fileName}";
+            $newPath = "{$newDirectory}/{$fileName}";
 
-            if (!Storage::disk('public')->exists('albums/temp/' . $album->id)) {
-                Storage::disk('public')->move(
-                    'albums/temp/' . basename($image),
-                    'albums/' . $album->id . '/' . basename($image)
-                );
+            // Move image from temp to album folder
+            if (Storage::disk($disk)->exists($tempPath)) {
+                Storage::disk($disk)->move($tempPath, $newPath);
             }
+
             // Update the image path
             $image = $newPath;
 
-            self::generateThumbnail($newDirectory, $image);
+            // Generate thumbnail
+            self::generateThumbnail($newDirectory, $newPath);
         }
 
         // Save the updated paths back to the JSON column
-        $album->images = ($images);
+        $album->images = $images;
         $album->save();
     }
 
     public static function generateThumbnail($mainNewDirectory, $mainImageUrl)
     {
+        $disk = self::getDisk();
         $thumbnailDirectory = "{$mainNewDirectory}/thumbnails";
-        $thumbnailFileName = "{$thumbnailDirectory}/" . basename($mainImageUrl);
+        $thumbnailFileName = basename($mainImageUrl);
+        $thumbnailPath = "{$thumbnailDirectory}/{$thumbnailFileName}";
 
-        if (!Storage::disk('public')->exists($thumbnailDirectory)) {
-            Storage::disk('public')->makeDirectory($thumbnailDirectory, 0755, true);
+        // Check if thumbnail already exists
+        if (Storage::disk($disk)->exists($thumbnailPath)) {
+            return;
         }
 
-        if (!Storage::disk('public')->exists($thumbnailFileName)) {
-            $imageContent = Storage::disk('public')->get($mainImageUrl);
+        try {
+            // Get the original image content
+            $imageContent = Storage::disk($disk)->get($mainImageUrl);
 
+            // Create thumbnail using Intervention Image
             $image = InterventionImage::read($imageContent);
-
             $image->cover(200, 200);
 
-            $image->save(public_path('/storage/' . $thumbnailFileName));
+            // Save thumbnail
+            if ($disk === 's3') {
+                Storage::disk($disk)->put(
+                    $thumbnailPath,
+                    $image->toJpeg(),
+                    ['visibility' => 'public']
+                );
+            } else {
+                Storage::disk($disk)->put(
+                    $thumbnailPath,
+                    $image->toJpeg(),
+                    ['visibility' => 'public']
+                );
+            }
+        } catch (\Exception $e) {
+            Log::error('Error generating thumbnail for ' . $mainImageUrl . ': ' . $e->getMessage());
         }
     }
 
@@ -72,16 +109,23 @@ class ImageService
     //This is used when updating an album
     public static function deleteAllImagesWhoAreNotInJsonFromStorage(Album $album)
     {
+        $disk = self::getDisk();
+        $uploadFolder = self::getUploadFolder();
         $images = array_map(function ($image) {
             return basename($image);
         }, $album->images);
 
-        $folderPath = 'albums/' . $album->id;
-        $thumbnailFolderPath = $folderPath . '/thumbnails';
+        if ($disk === 's3') {
+            $folderPath = "{$uploadFolder}/albums/{$album->id}";
+            $thumbnailFolderPath = "{$folderPath}/thumbnails";
+        } else {
+            $folderPath = "albums/{$album->id}";
+            $thumbnailFolderPath = "{$folderPath}/thumbnails";
+        }
 
         // Get all images in the folder
-        $allImages = array_diff(Storage::disk('public')->files($folderPath), ['.', '..']);
-        $allThumbnails = array_diff(Storage::disk('public')->files($thumbnailFolderPath), ['.', '..']);
+        $allImages = array_diff(Storage::disk($disk)->files($folderPath), ['.', '..']);
+        $allThumbnails = array_diff(Storage::disk($disk)->files($thumbnailFolderPath), ['.', '..']);
 
         // Find images that are not in the record's images
         $imagesToRemove = array_diff($allImages, array_map(function ($image) use ($folderPath) {
@@ -95,11 +139,11 @@ class ImageService
 
         // Remove images that are not in the record's images
         foreach ($imagesToRemove as $image) {
-            Storage::disk('public')->delete($image);
+            Storage::disk($disk)->delete($image);
         }
 
         foreach ($thumbnailsToRemove as $thumbnail) {
-            Storage::disk('public')->delete($thumbnail);
+            Storage::disk($disk)->delete($thumbnail);
         }
     }
 }
