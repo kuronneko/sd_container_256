@@ -84,9 +84,17 @@ class AlbumResource extends Resource
                     ->columnSpanFull()
                     ->reorderable(),
 
-                Forms\Components\Textarea::make('prompt')
+                Forms\Components\Grid::make(2)
+                    ->schema([
+                        Forms\Components\RichEditor::make('positive_prompt')
+                            ->required(),
+
+                        Forms\Components\RichEditor::make('negative_prompt')
+                            ->required(),
+                    ]),
+
+                Forms\Components\RichEditor::make('extra_configuration')
                     ->required()
-                    ->autosize()
                     ->columnSpanFull(),
             ]);
     }
@@ -99,10 +107,6 @@ class AlbumResource extends Resource
                     ->searchable()
                     ->sortable()
                     ->label('ID'),
-                Tables\Columns\TextColumn::make('prompt')
-                    ->searchable()
-                    ->label('Prompt')
-                    ->limit(50),
                 ImageColumn::make('thumbnail_urls')
                     ->label('Images')
                     ->square()

@@ -13,7 +13,9 @@ return new class extends Migration
     {
         Schema::create('albums', function (Blueprint $table) {
             $table->id();
-            $table->text('prompt');
+            $table->text('positive_prompt')->nullable();
+            $table->text('negative_prompt')->nullable();
+            $table->text('extra_configuration')->nullable();
             $table->timestamps();
         });
     }

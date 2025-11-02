@@ -30,15 +30,11 @@
                         <div class="flex flex-wrap justify-center gap-4">
                             @foreach (collect($album->thumbnail_urls)->take(3) as $thumbnail)
                                 <div class="flex justify-center">
-                                    <img src="{{ asset('storage/' . $thumbnail) }}" alt="Album Thumbnail"
+                                    <img src="{{ $thumbnail }}" alt="Album Thumbnail"
                                         class="max-w-full h-auto" style="max-width: 100px; max-height: 100px;" />
                                 </div>
                             @endforeach
                         </div>
-                        <p class="text-sm text-gray-700 mb-2">
-                            <strong>Prompt:</strong>
-                            {{ Str::limit($album->prompt, 200) }}
-                        </p>
                     </div>
                 </x-filament::card>
             </a>
