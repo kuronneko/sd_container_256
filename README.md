@@ -21,7 +21,7 @@ This README explains how to install, run, and test the project locally or using 
 - [Getting started — Installation flows](#getting-started--installation-flows)
 - [Environment variables](#environment-variables)
 - [Database migrations & seeding](#database-migrations--seeding)
-- [Assets (Vite)](#assets-vite--optional)
+- [Assets (Vite) (Optional)](#assets-vite--optional)
 - [Troubleshooting](#troubleshooting)
 - [Project structure highlights](#project-structure-highlights)
 - [Contributing](#contributing)
@@ -127,6 +127,33 @@ B) Docker with Laravel Sail (recommended for consistent dev env)
 	./vendor/bin/sail php artisan migrate --seed
 	./vendor/bin/sail php artisan storage:link
 	```
+
+### Initial credentials (default seeded user)
+
+If you run the seeders (`php artisan migrate --seed` or the Sail equivalent), the project includes a default seeded login that you can use to access the admin/UI immediately.
+
+- Username / Email: `dev@dev.com`
+- Password: `dev@dev.com`
+This default user is created directly by a migration (`database/migrations/2024_10_13_055124_add_super_user_table.php`) which inserts a super user with the credentials shown above (the password is hashed with `Hash::make`).
+
+If you want to change the password or create a new admin user after running migrations, use `php artisan tinker` and run (example):
+
+```php
+$user = \App\Models\User::where('email', 'dev@dev.com')->first();
+$user->password = bcrypt('your-new-password');
+$user->save();
+```
+
+Or create a new user from tinker:
+
+```php
+\App\Models\User::create([
+	'name' => 'Admin',
+	'email' => 'admin@example.com',
+	'password' => bcrypt('secret'),
+]);
+```
+
 
 C) Generic Docker Compose
 
