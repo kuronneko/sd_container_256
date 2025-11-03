@@ -132,6 +132,7 @@ If you run the seeders (`php artisan migrate --seed` or the Sail equivalent), th
 
 -   Username / Email: `dev@dev.com`
 -   Password: `dev@dev.com`
+
     This default user is created directly by a migration (`database/migrations/2024_10_13_055124_add_super_user_table.php`) which inserts a super user with the credentials shown above (the password is hashed with `Hash::make`).
 
 If you want to change the password or create a new admin user after running migrations, use `php artisan tinker` and run (example):
