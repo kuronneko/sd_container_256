@@ -29,6 +29,8 @@ class AlbumResource extends Resource
         return $form
             ->schema([
                 FileUpload::make('images')
+                    ->hint('If you upload multiple images, it automatically saves the metadata from the first image to all images.')
+                    ->helperText('You can upload multiple images. Supported formats: jpg, png, gif. Max 10 images.')
                     ->image()
                     ->required()
                     ->imageEditor()
@@ -84,18 +86,80 @@ class AlbumResource extends Resource
                     ->columnSpanFull()
                     ->reorderable(),
 
-                Forms\Components\Grid::make(2)
+                Forms\Components\Section::make('Prompts')
                     ->schema([
-                        Forms\Components\RichEditor::make('positive_prompt')
-                            ->required(),
+                        Forms\Components\Grid::make(2)
+                            ->schema([
+                                Forms\Components\RichEditor::make('positive')
+                                    ->placeholder('Metadata will be automatically extracted from the first uploaded image'),
+                                Forms\Components\RichEditor::make('negative')
+                                    ->placeholder('Metadata will be automatically extracted from the first uploaded image'),
+                            ]),
+                    ])
+                    ->collapsible()
+                    ->collapsed(),
 
-                        Forms\Components\RichEditor::make('negative_prompt')
-                            ->required(),
+                Forms\Components\Section::make('Generation Parameters')
+                    ->schema([
+                        Forms\Components\Grid::make(2)
+                            ->schema([
+                                Forms\Components\TextInput::make('seed')
+                                    ->numeric()
+                                    ->placeholder('Metadata will be automatically extracted from the first uploaded image'),
+
+                                Forms\Components\TextInput::make('steps')
+                                    ->numeric()
+                                    ->placeholder('Metadata will be automatically extracted from the first uploaded image'),
+
+                                Forms\Components\TextInput::make('cfg')
+                                    ->numeric()
+                                    ->step(0.1)
+                                    ->placeholder('Metadata will be automatically extracted from the first uploaded image'),
+
+                                Forms\Components\TextInput::make('sampler_name')
+                                    ->placeholder('Metadata will be automatically extracted from the first uploaded image'),
+
+                                Forms\Components\TextInput::make('scheduler')
+                                    ->placeholder('Metadata will be automatically extracted from the first uploaded image'),
+
+                                Forms\Components\TextInput::make('denoise')
+                                    ->numeric()
+                                    ->step(0.01)
+                                    ->placeholder('Metadata will be automatically extracted from the first uploaded image'),
+
+                                Forms\Components\TextInput::make('width')
+                                    ->numeric()
+                                    ->placeholder('Metadata will be automatically extracted from the first uploaded image'),
+
+                                Forms\Components\TextInput::make('height')
+                                    ->numeric()
+                                    ->placeholder('Metadata will be automatically extracted from the first uploaded image'),
+                            ]),
+
+                        Forms\Components\TextInput::make('ckpt_name')
+                            ->label('Model/Checkpoint')
+                            ->columnSpanFull()
+                            ->placeholder('Metadata will be automatically extracted from the first uploaded image'),
+                    ])
+                    ->collapsible()
+                    ->collapsed(),
+
+                Forms\Components\Section::make('Metadata')
+                    ->schema([
+                        Forms\Components\RichEditor::make('metadata')
+                            ->columnSpanFull()
+                            ->placeholder('Metadata will be automatically extracted from the first uploaded image')
+                    ])
+                    ->collapsible()
+                    ->collapsed(),
+
+                Forms\Components\Section::make('Comment')
+                    ->schema([
+                        Forms\Components\Textarea::make('comment')
+                            ->rows(3)
+                            ->columnSpanFull()
+                            ->placeholder('Add any notes or comments about this album...'),
                     ]),
-
-                Forms\Components\RichEditor::make('extra_configuration')
-                    ->required()
-                    ->columnSpanFull(),
             ]);
     }
 
@@ -126,13 +190,13 @@ class AlbumResource extends Resource
                 //
             ])
             ->actions([
-                 Tables\Actions\ViewAction::make()
+                Tables\Actions\ViewAction::make()
                     ->modalHeading(fn($record) => "ID: " . $record->id)
                     ->label(''),
                 Tables\Actions\EditAction::make()
                     ->label(''),
             ])
-/*             ->recordAction(Tables\Actions\ViewAction::class)
+            /*             ->recordAction(Tables\Actions\ViewAction::class)
             ->recordUrl(null) */
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([

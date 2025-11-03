@@ -3,10 +3,10 @@
 namespace App\Filament\Resources\AlbumResource\Pages;
 
 use Filament\Actions;
-use Illuminate\Support\Facades\Storage;
 use Filament\Resources\Pages\EditRecord;
 use App\Filament\Resources\AlbumResource;
 use App\Services\ImageService;
+use App\Services\MetaDataService;
 
 class EditAlbum extends EditRecord
 {
@@ -26,6 +26,9 @@ class EditAlbum extends EditRecord
 
         // Delete images that were removed
         ImageService::deleteAllImagesWhoAreNotInJsonFromStorage($this->record);
+
+        // Update metadata from current images
+        MetaDataService::updateMetadataFromImages($this->record);
     }
 
     protected function getRedirectUrl(): string

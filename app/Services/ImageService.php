@@ -163,4 +163,6 @@ class ImageService
             Storage::disk($disk)->delete($thumbnail);
         }
     }
+
+
 }

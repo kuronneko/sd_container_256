@@ -12,7 +12,28 @@ class Album extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['positive_prompt', 'negative_prompt', 'extra_configuration', 'images'];
+    protected $fillable = [
+        'seed',
+        'steps',
+        'cfg',
+        'sampler_name',
+        'scheduler',
+        'denoise',
+
+        'positive',
+        'negative',
+
+        'ckpt_name',
+
+        'width',
+        'height',
+
+        'metadata_prompt',
+        'metadata_workflow',
+
+        'comment',
+        'images'
+    ];
 
     protected $casts = [
         'images' => 'array',
