@@ -106,6 +106,8 @@ class AlbumOverview extends Widget implements HasForms
 
     protected function loadAlbums(): void
     {
-        $this->albums = Album::whereBetween('created_at', [$this->startDate, $this->endDate])->get();
+        $this->albums = Album::whereBetween('created_at', [$this->startDate, $this->endDate])
+            ->orderBy('created_at', 'desc')
+            ->get();
     }
 }

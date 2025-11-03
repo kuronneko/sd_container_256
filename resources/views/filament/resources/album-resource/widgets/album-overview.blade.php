@@ -25,13 +25,14 @@
         @foreach ($albums as $album)
             <a href="{{ route('filament.admin.resources.albums.view', $album->id) }}" class="block">
                 <x-filament::card class="relative p-4 bg-white shadow-lg rounded-lg flex flex-col items-center h-full">
-                    <div class="absolute top-0 right-0 p-2">
-                        <p class="text-xs text-gray-500">Created At:
-                            {{ $album->created_at->timezone('America/Santiago')->format('d M Y, H:i') }}</p>
-                    </div>
                     <div class="flex flex-col items-center flex-1">
-                        <p class="text-sm text-gray-700 mb-2">
-                            <strong>ID:</strong> {{ $album->id }} | <strong>Created:</strong> {{ $album->created_at->timezone('America/Santiago')->format('d M Y') }} | <strong>Images:</strong> {{ count($album->thumbnail_urls) }}
+                        <p class="text-sm text-gray-600 mb-2">
+                            <strong>ID:</strong> {{ $album->id }}
+                            | <strong>Created:</strong> {{ $album->created_at->timezone('America/Santiago')->format('d M Y') }}
+                            | <strong>Images:</strong> {{ count($album->thumbnail_urls) }}
+                            | <strong>Model:</strong> {{ $album->ckpt_name ?? 'N/A' }}
+                            | <strong>Seed:</strong> {{ $album->seed ?? 'N/A' }}
+                            | <strong>Dimensions:</strong> {{ ($album->width ?? 'N/A') . ' x ' . ($album->height ?? 'N/A') }}
                         </p>
                         <div class="flex flex-wrap justify-center gap-4" style="min-height: 220px; display: flex; align-items: center;">
                             @if (count($album->thumbnail_urls) > 0)

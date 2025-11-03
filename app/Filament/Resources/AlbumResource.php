@@ -179,12 +179,22 @@ class AlbumResource extends Resource
                     ->limit(3),
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
+                    ->sortable()
+                    ->label('Created'),
+                Tables\Columns\TextColumn::make('ckpt_name')
+                    ->label('Model')
+                    ->searchable()
+                    ->limit(30),
+                Tables\Columns\TextColumn::make('seed')
+                    ->label('Seed')
                     ->sortable(),
-                //->toggleable(isToggledHiddenByDefault: true),
+                Tables\Columns\TextColumn::make('dimensions')
+                    ->label('Dimensions')
+                    ->getStateUsing(fn ($record) => ($record->width ?? 'N/A') . ' x ' . ($record->height ?? 'N/A')),
                 Tables\Columns\TextColumn::make('updated_at')
                     ->dateTime()
-                    ->sortable(),
-                //->toggleable(isToggledHiddenByDefault: true),
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
                 //
@@ -202,7 +212,10 @@ class AlbumResource extends Resource
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
-            ]);
+            ])
+            ->paginated([10, 25, 50, 100])
+            ->defaultPaginationPageOption(100)
+            ->defaultSort('created_at', 'desc');
     }
 
     public static function getRelations(): array
