@@ -207,6 +207,8 @@ class MetaDataService
         // First pass: find KSampler node and get positive/negative references
         $positiveNodeId = null;
         $negativeNodeId = null;
+        $loraNames = [];
+        $dimensionsFound = false; // Track if we already found dimensions
 
         foreach ($promptData as $nodeId => $nodeData) {
             if (isset($nodeData['class_type']) && $nodeData['class_type'] === 'KSampler') {
@@ -261,13 +263,24 @@ class MetaDataService
                     }
                     break;
 
-                case 'EmptyLatentImage':
-                    // Extract image dimensions
-                    if (isset($inputs['width'])) {
-                        $album->width = $inputs['width'];
+                case 'LoraLoader':
+                    // Extract LoRA names (collect all LoRAs)
+                    if (isset($inputs['lora_name'])) {
+                        $loraNames[] = $inputs['lora_name'];
                     }
-                    if (isset($inputs['height'])) {
-                        $album->height = $inputs['height'];
+                    break;
+
+                case 'EmptyLatentImage':
+                case 'EmptySD3LatentImage':
+                    // Extract image dimensions - only from the first dimension node found
+                    if (!$dimensionsFound) {
+                        if (isset($inputs['width'])) {
+                            $album->width = $inputs['width'];
+                        }
+                        if (isset($inputs['height'])) {
+                            $album->height = $inputs['height'];
+                        }
+                        $dimensionsFound = true; // Don't extract from subsequent nodes
                     }
                     break;
 
@@ -290,6 +303,11 @@ class MetaDataService
                     }
                     break;
             }
+        }
+
+        // Save LoRA names separated by comma
+        if (!empty($loraNames)) {
+            $album->loras = implode(', ', $loraNames);
         }
     }
 }

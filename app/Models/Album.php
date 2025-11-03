@@ -24,6 +24,7 @@ class Album extends Model
         'negative',
 
         'ckpt_name',
+        'loras',
 
         'width',
         'height',

@@ -140,6 +140,9 @@ class AlbumResource extends Resource
                             ->label('Model/Checkpoint')
                             ->columnSpanFull()
                             ->placeholder('Metadata will be automatically extracted from the first uploaded image'),
+                            Forms\Components\TextInput::make('loras')
+                                ->label('LoRA Names')
+                                ->placeholder('Metadata will be automatically extracted from the first uploaded image'),
                     ])
                     ->collapsible()
                     ->collapsed(),
