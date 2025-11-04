@@ -6,6 +6,7 @@ use App\Models\Album;
 use Carbon\Carbon;
 use Filament\Forms;
 use Filament\Widgets\Widget;
+use Illuminate\Contracts\View\View;
 use Filament\Forms\Contracts\HasForms;
 use Filament\Forms\Concerns\InteractsWithForms;
 
@@ -19,25 +20,13 @@ class AlbumOverview extends Widget implements HasForms
 
     public $startDate;
     public $endDate;
-    public $albums;
+    public int $perPage = 100;
+    public int $page = 1;
+    public bool $hasMore = true;
 
     protected function getFormSchema(): array
     {
         return [
-            Forms\Components\Section::make('Filesystem Configuration')
-                ->description('Current filesystem disk configuration')
-                ->schema([
-                    Forms\Components\Grid::make()
-                        ->schema([
-                            Forms\Components\Placeholder::make('disk')
-                                ->label('Disk')
-                                ->content(config('filesystems.default'))
-                                ->columnSpan(1),
-                            ...($this->getFilesystemInfoFields()),
-                        ])
-                        ->columns(2),
-                ])
-                ->columnSpan('full'),
             Forms\Components\Grid::make()
                 ->schema([
                     Forms\Components\DatePicker::make('startDate')
@@ -55,37 +44,6 @@ class AlbumOverview extends Widget implements HasForms
         ];
     }
 
-    protected function getFilesystemInfoFields(): array
-    {
-        $disk = config('filesystems.default');
-        $fields = [];
-
-        if ($disk === 's3') {
-            $fields[] = Forms\Components\Placeholder::make('uploadFolder')
-                ->label('Upload Folder')
-                ->content(config('filesystems.disks.s3.upload_folder', 'sd_develop'))
-                ->columnSpan(1);
-
-            $fields[] = Forms\Components\Placeholder::make('bucket')
-                ->label('Bucket')
-                ->content(config('filesystems.disks.s3.bucket', ''))
-                ->columnSpan(1);
-
-            $fields[] = Forms\Components\Placeholder::make('region')
-                ->label('Region')
-                ->content(config('filesystems.disks.s3.region', ''))
-                ->columnSpan(1);
-        } else {
-            $diskUrl = config("filesystems.disks.{$disk}.url", '');
-            $fields[] = Forms\Components\Placeholder::make('url')
-                ->label('URL')
-                ->content($diskUrl)
-                ->columnSpan(2);
-        }
-
-        return $fields;
-    }
-
     public function mount(): void
     {
         $this->form->fill([
@@ -93,21 +51,43 @@ class AlbumOverview extends Widget implements HasForms
             'endDate' => Carbon::now()->endOfYear(),
         ]);
 
-        $this->loadAlbums();
+        $this->page = 1;
+        $this->hasMore = true;
     }
 
     public function submit(): void
     {
+        sleep(1);
+
         $this->startDate = $this->form->getState()['startDate'];
         $this->endDate = $this->form->getState()['endDate'];
 
-        $this->loadAlbums();
+        // Reset pagination when filters change
+        $this->page = 1;
+        $this->hasMore = true;
     }
 
-    protected function loadAlbums(): void
+    public function loadMore(): void
     {
-        $this->albums = Album::whereBetween('created_at', [$this->startDate, $this->endDate])
-            ->orderBy('created_at', 'desc')
-            ->get();
+        sleep(1);
+        // simply increase the page; render() will fetch the correct items
+        $this->page++;
+    }
+
+    public function render(): View
+    {
+        $query = Album::whereBetween('created_at', [$this->startDate, $this->endDate])
+            ->orderBy('created_at', 'desc');
+
+        $total = $query->count();
+
+        $albums = $query->skip(0)->take($this->page * $this->perPage)->get();
+
+        $this->hasMore = $total > $albums->count();
+
+        return view(static::$view, [
+            'albums' => $albums,
+            'hasMore' => $this->hasMore,
+        ]);
     }
 }
