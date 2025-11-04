@@ -176,10 +176,23 @@ class AlbumResource extends Resource
                     ->label('ID'),
                 ImageColumn::make('thumbnail_urls')
                     ->label('Images')
-                    ->square()
+/*                     ->square()
                     ->stacked()
                     ->limitedRemainingText()
-                    ->limit(3),
+                    ->limit(3) */
+                    ->getStateUsing(function ($record) {
+                        // Ensure the model prepares a selected thumbnail for display
+                        if (method_exists($record, 'prepareSelectedImageUrls')) {
+                            $record->prepareSelectedImageUrls();
+                        }
+
+                        // Return an array so ImageColumn stacked/limit behave consistently.
+                        if (!empty($record->selected_thumbnail_url)) {
+                            return [$record->selected_thumbnail_url];
+                        }
+
+                        return [];
+                    }),
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
