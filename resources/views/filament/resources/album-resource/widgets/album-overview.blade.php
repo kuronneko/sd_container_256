@@ -41,7 +41,7 @@
                         {{ $album->id }}
                         | <strong>Created:</strong>
                         {{ $album->created_at->timezone('America/Santiago')->format('d M Y') }}
-                        | <strong>Images:</strong> {{ count($album->thumbnail_urls) }}
+                        | <strong>Images:</strong> {{ ($album->count_images) }}
                         | <strong>Model:</strong> {{ $album->ckpt_name ?? 'N/A' }}
                         | <strong>Seed:</strong> {{ $album->seed ?? 'N/A' }}
                         | <strong>Dimensions:</strong>
@@ -49,7 +49,7 @@
                     </p>
                     <div class="flex flex-wrap justify-center gap-4"
                         style="min-height: 220px; display: flex; align-items: center;">
-                        @if (count($album->thumbnail_urls) > 0)
+                        @if ($album->count_images > 0)
                                 @if (!empty($album->selected_thumbnail_url))
                                     <a href="{{ route('filament.admin.resources.albums.view', $album->id) }}" class="block">
                                         <div class="flex justify-center">
