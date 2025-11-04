@@ -77,7 +77,7 @@ class AlbumOverview extends Widget implements HasForms
     public function render(): View
     {
         $query = Album::whereBetween('created_at', [$this->startDate, $this->endDate])
-            ->orderBy('created_at', 'desc');
+            ->orderBy('id', 'desc');
 
         $total = $query->count();
 

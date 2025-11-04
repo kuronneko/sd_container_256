@@ -243,7 +243,7 @@ class AlbumResource extends Resource
             ])
             ->paginated([10, 25, 50, 100, 1000])
             ->defaultPaginationPageOption(100)
-            ->defaultSort('created_at', 'desc');
+            ->defaultSort('id', 'desc');
     }
 
     public static function getRelations(): array
