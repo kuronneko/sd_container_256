@@ -190,8 +190,7 @@ class AlbumResource extends Resource
                     ->limit(30),
                 Tables\Columns\TextColumn::make('seed')
                     ->searchable()
-                    ->label('Seed')
-                    ->sortable(),
+                    ->label('Seed'),
                 Tables\Columns\TextColumn::make('dimensions')
                     ->label('Dimensions')
                     ->getStateUsing(fn ($record) => ($record->width ?? 'N/A') . ' x ' . ($record->height ?? 'N/A')),

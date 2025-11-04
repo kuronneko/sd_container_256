@@ -83,11 +83,59 @@ class AlbumOverview extends Widget implements HasForms
 
         $albums = $query->skip(0)->take($this->page * $this->perPage)->get();
 
+        // Attach selected thumbnail/full URLs to each album for consistent display/open behavior
+        $this->attachSelectedImageUrls($albums);
+
         $this->hasMore = $total > $albums->count();
 
         return view(static::$view, [
             'albums' => $albums,
             'hasMore' => $this->hasMore,
         ]);
+    }
+
+    /**
+     * Pick a random image per album and attach selected_thumbnail_url and selected_image_url
+     * properties on the album model instances so the view can use the same image for
+     * the thumbnail and the 'open' action.
+     *
+     * @param \Illuminate\Support\Collection $albums
+     * @return void
+     */
+    protected function attachSelectedImageUrls($albums): void
+    {
+        foreach ($albums as $album) {
+            $images = $album->images ?? [];
+            $selectedThumb = null;
+            $selectedFull = null;
+
+            if (count($images) > 0) {
+                $randKey = array_rand($images);
+                $filename = basename($images[$randKey]);
+
+                if (config('filesystems.default') === 's3') {
+                    $uploadFolder = config('filesystems.disks.s3.upload_folder', 'sd_develop');
+                    $bucket = config('filesystems.disks.s3.bucket');
+                    $region = config('filesystems.disks.s3.region');
+                    $cdnUrl = "https://{$bucket}.{$region}.cdn.digitaloceanspaces.com";
+
+                    $selectedThumb = "{$cdnUrl}/{$uploadFolder}/albums/{$album->id}/thumbnails/{$filename}";
+                    $selectedFull = "{$cdnUrl}/{$uploadFolder}/albums/{$album->id}/{$filename}";
+                } else {
+                    $disk = config('filesystems.default');
+                    $diskUrl = config("filesystems.disks.{$disk}.url");
+                    if ($diskUrl) {
+                        $selectedThumb = rtrim($diskUrl, '/') . "/albums/{$album->id}/thumbnails/{$filename}";
+                        $selectedFull = rtrim($diskUrl, '/') . "/albums/{$album->id}/{$filename}";
+                    } else {
+                        $selectedThumb = url('/storage/app/private/albums/' . $album->id . '/thumbnails/' . $filename);
+                        $selectedFull = url('/storage/app/private/albums/' . $album->id . '/' . $filename);
+                    }
+                }
+            }
+
+            $album->selected_thumbnail_url = $selectedThumb;
+            $album->selected_image_url = $selectedFull;
+        }
     }
 }
