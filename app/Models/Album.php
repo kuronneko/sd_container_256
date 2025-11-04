@@ -40,14 +40,14 @@ class Album extends Model
         'images' => 'array',
     ];
 
-/*     public function getRandomImageAttribute()
+    public function getRandomImageAttribute()
     {
         $images = $this->images;
         return $images ? $images[array_rand($images)] : null;
-    } */
+    }
 
     // Get images with full paths for Filament display
-/*     public function getImagesWithFullPathsAttribute()
+    public function getImagesWithFullPathsAttribute()
     {
         $images = $this->images ?? [];
 
@@ -63,9 +63,9 @@ class Album extends Model
         }
 
         return $images;
-    } */
+    }
 
-/*     public function getThumbnailUrlsAttribute()
+    public function getThumbnailUrlsAttribute()
     {
         $images = $this->images;
         $thumbnails = [];
@@ -96,7 +96,7 @@ class Album extends Model
         }
 
         return $thumbnails;
-    } */
+    }
 
     /**
      * Prepare and attach selected image URLs (thumbnail and full) and image count
