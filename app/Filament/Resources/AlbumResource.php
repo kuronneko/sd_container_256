@@ -189,6 +189,7 @@ class AlbumResource extends Resource
                     ->searchable()
                     ->limit(30),
                 Tables\Columns\TextColumn::make('seed')
+                    ->searchable()
                     ->label('Seed')
                     ->sortable(),
                 Tables\Columns\TextColumn::make('dimensions')
@@ -204,19 +205,19 @@ class AlbumResource extends Resource
             ])
             ->actions([
                 Tables\Actions\ViewAction::make()
-                    ->modalHeading(fn($record) => "ID: " . $record->id)
                     ->label(''),
                 Tables\Actions\EditAction::make()
                     ->label(''),
             ])
-            /*             ->recordAction(Tables\Actions\ViewAction::class)
-            ->recordUrl(null) */
+                // Disable row click/navigation: ensure clicking a table row does not open the record.
+                ->recordAction(null)
+                ->recordUrl(null)
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
             ])
-            ->paginated([10, 25, 50, 100])
+            ->paginated([10, 25, 50, 100, 1000])
             ->defaultPaginationPageOption(100)
             ->defaultSort('created_at', 'desc');
     }
