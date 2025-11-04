@@ -140,9 +140,9 @@ class AlbumResource extends Resource
                             ->label('Model/Checkpoint')
                             ->columnSpanFull()
                             ->placeholder('Metadata will be automatically extracted from the first uploaded image'),
-                            Forms\Components\TextInput::make('loras')
-                                ->label('LoRA Names')
-                                ->placeholder('Metadata will be automatically extracted from the first uploaded image'),
+                        Forms\Components\TextInput::make('loras')
+                            ->label('LoRA Names')
+                            ->placeholder('Metadata will be automatically extracted from the first uploaded image'),
                     ])
                     ->collapsible()
                     ->collapsed(),
@@ -174,12 +174,8 @@ class AlbumResource extends Resource
                     ->searchable()
                     ->sortable()
                     ->label('ID'),
-                ImageColumn::make('thumbnail_urls')
+                ImageColumn::make('prepared_thumbnail_url')
                     ->label('Images')
-/*                     ->square()
-                    ->stacked()
-                    ->limitedRemainingText()
-                    ->limit(3) */
                     ->getStateUsing(function ($record) {
                         // Ensure the model prepares a selected thumbnail for display
                         if (method_exists($record, 'prepareSelectedImageUrls')) {
@@ -192,6 +188,22 @@ class AlbumResource extends Resource
                         }
 
                         return [];
+                    })
+                    ->extraImgAttributes(function ($record) {
+                        // Ensure prepared url exists
+                        if (method_exists($record, 'prepareSelectedImageUrls')) {
+                            $record->prepareSelectedImageUrls();
+                        }
+
+                        $attrs = [];
+                        if (!empty($record->selected_image_url)) {
+                            // Use inline JS to open the selected image in a new tab
+                            $attrs['onclick'] = "window.open('{$record->selected_image_url}', '_blank')";
+                            $attrs['style'] = 'cursor: pointer;';
+                            $attrs['title'] = 'Open image in new tab';
+                        }
+
+                        return $attrs;
                     }),
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
@@ -206,7 +218,7 @@ class AlbumResource extends Resource
                     ->label('Seed'),
                 Tables\Columns\TextColumn::make('dimensions')
                     ->label('Dimensions')
-                    ->getStateUsing(fn ($record) => ($record->width ?? 'N/A') . ' x ' . ($record->height ?? 'N/A')),
+                    ->getStateUsing(fn($record) => ($record->width ?? 'N/A') . ' x ' . ($record->height ?? 'N/A')),
                 Tables\Columns\TextColumn::make('updated_at')
                     ->dateTime()
                     ->sortable()
@@ -221,9 +233,9 @@ class AlbumResource extends Resource
                 Tables\Actions\EditAction::make()
                     ->label(''),
             ])
-                // Disable row click/navigation: ensure clicking a table row does not open the record.
-                ->recordAction(null)
-                ->recordUrl(null)
+            // Disable row click/navigation: ensure clicking a table row does not open the record.
+            ->recordAction(null)
+            ->recordUrl(null)
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
