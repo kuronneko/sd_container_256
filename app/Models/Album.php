@@ -40,6 +40,13 @@ class Album extends Model
         'images' => 'array',
     ];
 
+    /**
+     * Cache for prepared image payload to ensure consistent URLs per request.
+     *
+     * @var array|null
+     */
+    protected ?array $preparedImageCache = null;
+
 /*     public function getRandomImageAttribute()
     {
         $images = $this->images;
@@ -110,37 +117,86 @@ class Album extends Model
      */
     public function prepareSelectedImageUrls(): void
     {
-        $images = $this->images ?? [];
-        $this->count_images = count($images);
+        // Prepare and cache payload, then set transient properties for compatibility.
+        $this->ensurePreparedImageCache();
 
-        $this->selected_thumbnail_url = null;
-        $this->selected_image_url = null;
+        $payload = $this->preparedImageCache ?? ['thumbnail' => null, 'image' => null, 'count' => 0];
 
-        if ($this->count_images === 0) {
+        $this->selected_thumbnail_url = $payload['thumbnail'];
+        $this->selected_image_url = $payload['image'];
+        $this->count_images = $payload['count'];
+    }
+
+    /**
+     * Ensure the prepared image payload is computed and cached on the model instance.
+     * This method is idempotent and will not reorder collections — it only reads
+     * the `images` attribute and constructs URLs.
+     *
+     * @return void
+     */
+    protected function ensurePreparedImageCache(): void
+    {
+        if ($this->preparedImageCache !== null) {
             return;
         }
 
-        $randKey = array_rand($images);
-        $filename = basename($images[$randKey]);
+        $images = $this->images ?? [];
+        $count = count($images);
 
-        if (config('filesystems.default') === 's3') {
-            $uploadFolder = config('filesystems.disks.s3.upload_folder', 'sd_develop');
-            $bucket = config('filesystems.disks.s3.bucket');
-            $region = config('filesystems.disks.s3.region');
-            $cdnUrl = "https://{$bucket}.{$region}.cdn.digitaloceanspaces.com";
+        $thumbnail = null;
+        $image = null;
 
-            $this->selected_thumbnail_url = "{$cdnUrl}/{$uploadFolder}/albums/{$this->id}/thumbnails/{$filename}";
-            $this->selected_image_url = "{$cdnUrl}/{$uploadFolder}/albums/{$this->id}/{$filename}";
-        } else {
-            $disk = config('filesystems.default');
-            $diskUrl = config("filesystems.disks.{$disk}.url");
-            if ($diskUrl) {
-                $this->selected_thumbnail_url = rtrim($diskUrl, '/') . "/albums/{$this->id}/thumbnails/{$filename}";
-                $this->selected_image_url = rtrim($diskUrl, '/') . "/albums/{$this->id}/{$filename}";
+        if ($count > 0) {
+            $randKey = array_rand($images);
+            $filename = basename($images[$randKey]);
+
+            if (config('filesystems.default') === 's3') {
+                $uploadFolder = config('filesystems.disks.s3.upload_folder', 'sd_develop');
+                $bucket = config('filesystems.disks.s3.bucket');
+                $region = config('filesystems.disks.s3.region');
+                $cdnUrl = "https://{$bucket}.{$region}.cdn.digitaloceanspaces.com";
+
+                $thumbnail = "{$cdnUrl}/{$uploadFolder}/albums/{$this->id}/thumbnails/{$filename}";
+                $image = "{$cdnUrl}/{$uploadFolder}/albums/{$this->id}/{$filename}";
             } else {
-                $this->selected_thumbnail_url = url('/storage/app/private/albums/' . $this->id . '/thumbnails/' . $filename);
-                $this->selected_image_url = url('/storage/app/private/albums/' . $this->id . '/' . $filename);
+                $disk = config('filesystems.default');
+                $diskUrl = config("filesystems.disks.{$disk}.url");
+                if ($diskUrl) {
+                    $thumbnail = rtrim($diskUrl, '/') . "/albums/{$this->id}/thumbnails/{$filename}";
+                    $image = rtrim($diskUrl, '/') . "/albums/{$this->id}/{$filename}";
+                } else {
+                    $thumbnail = url('/storage/app/private/albums/' . $this->id . '/thumbnails/' . $filename);
+                    $image = url('/storage/app/private/albums/' . $this->id . '/' . $filename);
+                }
             }
         }
+
+        $this->preparedImageCache = [
+            'thumbnail' => $thumbnail,
+            'image' => $image,
+            'count' => $count,
+        ];
+    }
+
+    /**
+     * Lazy accessors for prepared image data. These use the cached payload so
+     * multiple accesses within the same request return the same values.
+     */
+    public function getSelectedThumbnailUrlAttribute()
+    {
+        $this->ensurePreparedImageCache();
+        return $this->preparedImageCache['thumbnail'] ?? null;
+    }
+
+    public function getSelectedImageUrlAttribute()
+    {
+        $this->ensurePreparedImageCache();
+        return $this->preparedImageCache['image'] ?? null;
+    }
+
+    public function getCountImagesAttribute()
+    {
+        $this->ensurePreparedImageCache();
+        return $this->preparedImageCache['count'] ?? 0;
     }
 }
