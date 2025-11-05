@@ -13,6 +13,7 @@ use Filament\Forms\Components\ViewField;
 use Filament\Tables\Columns\ImageColumn;
 use Filament\Forms\Components\FileUpload;
 use Illuminate\Database\Eloquent\Builder;
+use Filament\Tables\Filters\Filter;
 use App\Filament\Resources\AlbumResource\Pages;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use App\Filament\Resources\AlbumResource\RelationManagers;
@@ -225,7 +226,29 @@ class AlbumResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                //
+                Filter::make('positive')
+                    ->form([
+                        Forms\Components\TextInput::make('positive')->label('Positive contains'),
+                    ])
+                    ->query(function (Builder $query, array $data) {
+                        if (empty($data['positive'])) {
+                            return $query;
+                        }
+
+                        return $query->where('positive', 'like', '%' . $data['positive'] . '%');
+                    }),
+
+                Filter::make('negative')
+                    ->form([
+                        Forms\Components\TextInput::make('negative')->label('Negative contains'),
+                    ])
+                    ->query(function (Builder $query, array $data) {
+                        if (empty($data['negative'])) {
+                            return $query;
+                        }
+
+                        return $query->where('negative', 'like', '%' . $data['negative'] . '%');
+                    }),
             ])
             ->actions([
                 Tables\Actions\ViewAction::make()

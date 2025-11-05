@@ -20,6 +20,7 @@ class AlbumOverview extends Widget implements HasForms
 
     public $startDate;
     public $endDate;
+    public ?string $search = null;
     public int $perPage = 100;
     public int $page = 1;
     public bool $hasMore = true;
@@ -41,6 +42,10 @@ class AlbumOverview extends Widget implements HasForms
                         ->columnSpan(1),
                 ])
                 ->columnSpan('full'),
+            Forms\Components\TextInput::make('search')
+                ->label('Search')
+                ->placeholder('Search positive, negative, seed or model name (ckpt_name)')
+                ->columnSpan('full'),
         ];
     }
 
@@ -49,6 +54,7 @@ class AlbumOverview extends Widget implements HasForms
         $this->form->fill([
             'startDate' => Carbon::now()->startOfYear(),
             'endDate' => Carbon::now()->endOfYear(),
+            'search' => null,
         ]);
 
         $this->page = 1;
@@ -61,6 +67,7 @@ class AlbumOverview extends Widget implements HasForms
 
         $this->startDate = $this->form->getState()['startDate'];
         $this->endDate = $this->form->getState()['endDate'];
+        $this->search = $this->form->getState()['search'] ?? null;
 
         // Reset pagination when filters change
         $this->page = 1;
@@ -78,6 +85,16 @@ class AlbumOverview extends Widget implements HasForms
     {
         $query = Album::whereBetween('created_at', [$this->startDate, $this->endDate])
             ->orderBy('id', 'desc');
+
+        if (!empty($this->search)) {
+            $search = trim((string) $this->search);
+            $query->where(function ($q) use ($search) {
+                $q->where('positive', 'like', "%{$search}%")
+                    ->orWhere('negative', 'like', "%{$search}%")
+                    ->orWhere('ckpt_name', 'like', "%{$search}%")
+                    ->orWhere('seed', 'like', "%{$search}%");
+            });
+        }
 
         $total = $query->count();
 
