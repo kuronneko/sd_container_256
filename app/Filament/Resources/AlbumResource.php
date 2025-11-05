@@ -55,7 +55,7 @@ class AlbumResource extends Resource
                     })
                     ->when(config('filesystems.default') === 's3', fn($component) => $component->visibility('public'))
                     ->formatStateUsing(function ($state) {
-                        // Add back the upload_folder prefix for display when using S3
+                        // For S3: add back the upload_folder prefix for display
                         if (config('filesystems.default') === 's3' && $state) {
                             $uploadFolder = config('filesystems.disks.s3.upload_folder', 'sd_develop');
                             $formatted = [];
@@ -69,10 +69,17 @@ class AlbumResource extends Resource
                             }
                             return $formatted;
                         }
+
+                        // For local disk, Filament may provide a UUID => path map when reorderable.
+                        // Normalize to an indexed array of paths so both S3 and local behave the same in the DB.
+                        if ($state) {
+                            return array_values((array) $state);
+                        }
+
                         return $state;
                     })
                     ->dehydrateStateUsing(function ($state) {
-                        // Normalize paths by removing upload_folder prefix when saving (both create and edit)
+                        // For S3: remove upload_folder prefix when saving
                         if (config('filesystems.default') === 's3' && $state) {
                             $uploadFolder = config('filesystems.disks.s3.upload_folder', 'sd_develop');
                             $normalized = [];
@@ -81,6 +88,12 @@ class AlbumResource extends Resource
                             }
                             return $normalized;
                         }
+
+                        // For local disk: drop any UUID keys and return an indexed array of paths
+                        if ($state) {
+                            return array_values((array) $state);
+                        }
+
                         return $state;
                     })
                     ->maxFiles(10)
