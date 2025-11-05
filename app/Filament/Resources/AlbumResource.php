@@ -92,9 +92,13 @@ class AlbumResource extends Resource
                         Forms\Components\Grid::make(2)
                             ->schema([
                                 Forms\Components\RichEditor::make('positive')
-                                    ->placeholder('Metadata will be automatically extracted from the first uploaded image'),
+                                    ->placeholder('Metadata will be automatically extracted from the first uploaded image')
+                                    ->formatStateUsing(fn($state, $record) => $record ? $record->positive : $state)
+                                    ->dehydrateStateUsing(fn($state) => \App\Models\Album::encryptValue($state)),
                                 Forms\Components\RichEditor::make('negative')
-                                    ->placeholder('Metadata will be automatically extracted from the first uploaded image'),
+                                    ->placeholder('Metadata will be automatically extracted from the first uploaded image')
+                                    ->formatStateUsing(fn($state, $record) => $record ? $record->negative : $state)
+                                    ->dehydrateStateUsing(fn($state) => \App\Models\Album::encryptValue($state)),
                             ]),
                     ])
                     ->collapsible()
@@ -106,44 +110,64 @@ class AlbumResource extends Resource
                             ->schema([
                                 Forms\Components\TextInput::make('seed')
                                     ->numeric()
-                                    ->placeholder('Metadata will be automatically extracted from the first uploaded image'),
+                                    ->placeholder('Metadata will be automatically extracted from the first uploaded image')
+                                    ->formatStateUsing(fn($state, $record) => $record ? $record->seed : $state)
+                                    ->dehydrateStateUsing(fn($state) => \App\Models\Album::encryptValue($state)),
 
                                 Forms\Components\TextInput::make('steps')
                                     ->numeric()
-                                    ->placeholder('Metadata will be automatically extracted from the first uploaded image'),
+                                    ->placeholder('Metadata will be automatically extracted from the first uploaded image')
+                                    ->formatStateUsing(fn($state, $record) => $record ? $record->steps : $state)
+                                    ->dehydrateStateUsing(fn($state) => \App\Models\Album::encryptValue($state)),
 
                                 Forms\Components\TextInput::make('cfg')
                                     ->numeric()
                                     ->step(0.1)
-                                    ->placeholder('Metadata will be automatically extracted from the first uploaded image'),
+                                    ->placeholder('Metadata will be automatically extracted from the first uploaded image')
+                                    ->formatStateUsing(fn($state, $record) => $record ? $record->cfg : $state)
+                                    ->dehydrateStateUsing(fn($state) => \App\Models\Album::encryptValue($state)),
 
                                 Forms\Components\TextInput::make('sampler_name')
-                                    ->placeholder('Metadata will be automatically extracted from the first uploaded image'),
+                                    ->placeholder('Metadata will be automatically extracted from the first uploaded image')
+                                    ->formatStateUsing(fn($state, $record) => $record ? $record->sampler_name : $state)
+                                    ->dehydrateStateUsing(fn($state) => \App\Models\Album::encryptValue($state)),
 
                                 Forms\Components\TextInput::make('scheduler')
-                                    ->placeholder('Metadata will be automatically extracted from the first uploaded image'),
+                                    ->placeholder('Metadata will be automatically extracted from the first uploaded image')
+                                    ->formatStateUsing(fn($state, $record) => $record ? $record->scheduler : $state)
+                                    ->dehydrateStateUsing(fn($state) => \App\Models\Album::encryptValue($state)),
 
                                 Forms\Components\TextInput::make('denoise')
                                     ->numeric()
                                     ->step(0.01)
-                                    ->placeholder('Metadata will be automatically extracted from the first uploaded image'),
+                                    ->placeholder('Metadata will be automatically extracted from the first uploaded image')
+                                    ->formatStateUsing(fn($state, $record) => $record ? $record->denoise : $state)
+                                    ->dehydrateStateUsing(fn($state) => \App\Models\Album::encryptValue($state)),
 
                                 Forms\Components\TextInput::make('width')
                                     ->numeric()
-                                    ->placeholder('Metadata will be automatically extracted from the first uploaded image'),
+                                    ->placeholder('Metadata will be automatically extracted from the first uploaded image')
+                                    ->formatStateUsing(fn($state, $record) => $record ? $record->width : $state)
+                                    ->dehydrateStateUsing(fn($state) => \App\Models\Album::encryptValue($state)),
 
                                 Forms\Components\TextInput::make('height')
                                     ->numeric()
-                                    ->placeholder('Metadata will be automatically extracted from the first uploaded image'),
+                                    ->placeholder('Metadata will be automatically extracted from the first uploaded image')
+                                    ->formatStateUsing(fn($state, $record) => $record ? $record->height : $state)
+                                    ->dehydrateStateUsing(fn($state) => \App\Models\Album::encryptValue($state)),
                             ]),
 
                         Forms\Components\TextInput::make('ckpt_name')
                             ->label('Model/Checkpoint')
                             ->columnSpanFull()
-                            ->placeholder('Metadata will be automatically extracted from the first uploaded image'),
+                            ->placeholder('Metadata will be automatically extracted from the first uploaded image')
+                            ->formatStateUsing(fn($state, $record) => $record ? $record->ckpt_name : $state)
+                            ->dehydrateStateUsing(fn($state) => \App\Models\Album::encryptValue($state)),
                         Forms\Components\TextInput::make('loras')
                             ->label('LoRA Names')
-                            ->placeholder('Metadata will be automatically extracted from the first uploaded image'),
+                            ->placeholder('Metadata will be automatically extracted from the first uploaded image')
+                            ->formatStateUsing(fn($state, $record) => $record ? $record->loras : $state)
+                            ->dehydrateStateUsing(fn($state) => \App\Models\Album::encryptValue($state)),
                     ])
                     ->collapsible()
                     ->collapsed(),
@@ -151,8 +175,10 @@ class AlbumResource extends Resource
                 Forms\Components\Section::make('Metadata')
                     ->schema([
                         Forms\Components\RichEditor::make('metadata')
-                            ->columnSpanFull()
-                            ->placeholder('Metadata will be automatically extracted from the first uploaded image')
+                                    ->columnSpanFull()
+                                    ->placeholder('Metadata will be automatically extracted from the first uploaded image')
+                                    ->formatStateUsing(fn($state, $record) => $record ? $record->metadata : $state)
+                                    ->dehydrateStateUsing(fn($state) => \App\Models\Album::encryptValue($state))
                     ])
                     ->collapsible()
                     ->collapsed(),
@@ -162,7 +188,9 @@ class AlbumResource extends Resource
                         Forms\Components\Textarea::make('comment')
                             ->rows(3)
                             ->columnSpanFull()
-                            ->placeholder('Add any notes or comments about this album...'),
+                            ->placeholder('Add any notes or comments about this album...')
+                            ->formatStateUsing(fn($state, $record) => $record ? $record->comment : $state)
+                            ->dehydrateStateUsing(fn($state) => \App\Models\Album::encryptValue($state)),
                     ]),
             ]);
     }
@@ -213,10 +241,12 @@ class AlbumResource extends Resource
                 Tables\Columns\TextColumn::make('ckpt_name')
                     ->label('Model')
                     ->searchable()
-                    ->limit(30),
+                    ->limit(30)
+                    ->getStateUsing(fn($record) => $record ? $record->ckpt_name : ''),
                 Tables\Columns\TextColumn::make('seed')
                     ->searchable()
-                    ->label('Seed'),
+                    ->label('Seed')
+                    ->getStateUsing(fn($record) => $record ? $record->seed : ''),
                 Tables\Columns\TextColumn::make('dimensions')
                     ->label('Dimensions')
                     ->getStateUsing(fn($record) => ($record->width ?? 'N/A') . ' x ' . ($record->height ?? 'N/A')),
