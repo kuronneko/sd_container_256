@@ -175,7 +175,7 @@ class AlbumResource extends Resource
                         // can perform a single encrypt-on-move operation.
                         $isAlbumFolder = (bool) preg_match('#(^|/)albums/\d+$#', $directory);
 
-                        if ($diskName === 's3' && $isAlbumFolder) {
+                        if (ImageService::isEncryptedDisk($diskName) && $isAlbumFolder) {
                             try {
                                 $realPath = method_exists($file, 'getRealPath') ? $file->getRealPath() : ($file->getPath() ?? null);
                                 $contents = $realPath ? file_get_contents($realPath) : $file->get();

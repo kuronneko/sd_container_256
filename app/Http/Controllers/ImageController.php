@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Storage;
+use App\Services\ImageService;
 
 class ImageController extends Controller
 {
@@ -17,23 +18,28 @@ class ImageController extends Controller
     public function showFromS3($albumId, $filename)
     {
         $disk = config('filesystems.default');
-        if ($disk !== 's3') {
-            abort(404);
-        }
 
-        $uploadFolder = config('filesystems.disks.s3.upload_folder', 'sd_develop');
-        $path = "{$uploadFolder}/albums/{$albumId}/{$filename}";
+        // Build the path depending on disk type. For S3 the upload_folder prefix may be used.
+        if ($disk === 's3') {
+            $uploadFolder = config('filesystems.disks.s3.upload_folder', 'sd_develop');
+            $path = "{$uploadFolder}/albums/{$albumId}/{$filename}";
+        } else {
+            $path = "albums/{$albumId}/{$filename}";
+        }
 
         if (!Storage::disk($disk)->exists($path)) {
             abort(404);
         }
 
-        $encrypted = Storage::disk($disk)->get($path);
+        $contents = Storage::disk($disk)->get($path);
 
-        try {
-            $decrypted = base64_decode(Crypt::decryptString($encrypted));
-        } catch (\Exception $e) {
-            abort(404);
+        $decrypted = $contents;
+        if (ImageService::isEncryptedDisk($disk)) {
+            try {
+                $decrypted = base64_decode(Crypt::decryptString($contents));
+            } catch (\Exception $e) {
+                abort(404);
+            }
         }
 
         $finfo = finfo_open();

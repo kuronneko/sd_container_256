@@ -17,6 +17,12 @@ class ImageService
         return config('filesystems.default');
     }
 
+    // Public helper: whether a given disk should have its image contents encrypted
+    public static function isEncryptedDisk(string $disk): bool
+    {
+        return in_array($disk, (array) config('image_encrypt.encrypted_disks', ['s3']));
+    }
+
     // Get upload folder path based on disk
     protected static function getUploadFolder(): string
     {
@@ -66,7 +72,7 @@ class ImageService
 
             // Check if image is in temp folder (new upload)
             if (Storage::disk($disk)->exists($tempPath)) {
-                if ($disk === 's3') {
+                if (self::isEncryptedDisk($disk)) {
                     // If requested to skip encryption, just move the object as-is.
                     if ($skipEncryption) {
                         try {
@@ -91,14 +97,14 @@ class ImageService
                         }
                     }
                 } else {
-                    // Local disk: just move
+                    // Local/non-encrypted disk: just move
                     Storage::disk($disk)->move($tempPath, $newPath);
                     // Generate thumbnail for newly moved image
                     self::generateThumbnail($newDirectory, $newPath);
                 }
             } else if (Storage::disk($disk)->exists($newPath)) {
-                // Image already in album folder. Ensure it's encrypted on S3 if needed, then check thumbnail.
-                if ($disk === 's3') {
+                // Image already in album folder. Ensure it's encrypted on encrypted disks if needed, then check thumbnail.
+                if (self::isEncryptedDisk($disk)) {
                     try {
                         $existing = Storage::disk($disk)->get($newPath);
                         // If decrypting succeeds it's already encrypted; if it throws, assume plaintext and encrypt in-place
@@ -148,7 +154,7 @@ class ImageService
             // Get the original image content. If stored encrypted on S3, try to decrypt first.
             $imageContent = Storage::disk($disk)->get($mainImageUrl);
 
-            if ($disk === 's3') {
+            if (self::isEncryptedDisk($disk)) {
                 try {
                     $decoded = Crypt::decryptString($imageContent);
                     $imageContent = base64_decode($decoded);
@@ -161,12 +167,18 @@ class ImageService
             $image = InterventionImage::read($imageContent);
             $image->cover(200, 200);
 
-            // Save thumbnail (thumbnails are kept as public, unencrypted files for quick display)
-            Storage::disk($disk)->put(
-                $thumbnailPath,
-                $image->toJpeg(),
-                ['visibility' => 'public']
-            );
+            // Save thumbnail. If thumbnail encryption is enabled in config, encrypt it too.
+            if (config('image_encrypt.encrypt_thumbnails', false) && self::isEncryptedDisk($disk)) {
+                $thumbContents = $image->toJpeg();
+                $encryptedThumb = Crypt::encryptString(base64_encode($thumbContents));
+                Storage::disk($disk)->put($thumbnailPath, $encryptedThumb, ['visibility' => 'public']);
+            } else {
+                Storage::disk($disk)->put(
+                    $thumbnailPath,
+                    $image->toJpeg(),
+                    ['visibility' => 'public']
+                );
+            }
         } catch (\Exception $e) {
             Log::error('Error generating thumbnail for ' . $mainImageUrl . ': ' . $e->getMessage());
         }

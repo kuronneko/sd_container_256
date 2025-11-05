@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Album;
+use App\Services\ImageService;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Crypt;
@@ -15,7 +16,7 @@ class MetaDataService
     public static function extractAndSaveMetadata(Album $album): void
     {
         $disk = config('filesystems.default');
-        $uploadFolder = config('filesystems.default') === 's3'
+        $uploadFolder = $disk === 's3'
             ? config('filesystems.disks.s3.upload_folder', 'sd_develop')
             : '';
 
@@ -71,7 +72,7 @@ class MetaDataService
         $fileName = basename($firstImage);
 
         $disk = config('filesystems.default');
-        $uploadFolder = config('filesystems.default') === 's3'
+        $uploadFolder = $disk === 's3'
             ? config('filesystems.disks.s3.upload_folder', 'sd_develop')
             : '';
 
@@ -109,8 +110,8 @@ class MetaDataService
         try {
             $imageContent = Storage::disk($disk)->get($imagePath);
 
-            // If the image is stored encrypted on S3, try to decrypt it first
-            if ($disk === 's3') {
+            // If the image is stored encrypted on configured disks, try to decrypt it first
+            if (ImageService::isEncryptedDisk($disk)) {
                 try {
                     $decoded = Crypt::decryptString($imageContent);
                     $imageContent = base64_decode($decoded);
