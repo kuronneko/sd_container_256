@@ -57,6 +57,11 @@ return [
             'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
             'throw' => false,
             'upload_folder' => env('AWS_UPLOAD_FOLDER'),
+            // Ensure server-side encryption is used for uploaded objects
+            // This will be passed as options to the S3 putObject calls where supported.
+            'options' => [
+                'ServerSideEncryption' => 'AES256',
+            ],
 
         ],
 
