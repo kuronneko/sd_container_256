@@ -38,8 +38,58 @@ class Album extends Model
     ];
 
     protected $casts = [
-        'images' => 'array',
     ];
+
+    /**
+     * Decrypt and return images as an indexed array.
+     * Supports rows that are still plain JSON (not yet encrypted) as a fallback.
+     */
+    public function getImagesAttribute($value)
+    {
+        if (empty($value)) {
+            return [];
+        }
+
+        // Try to decrypt the stored value. If it fails, assume it's plain JSON or a string path.
+        try {
+            $decrypted = Crypt::decryptString($value);
+            $json = $decrypted;
+        } catch (\Throwable $e) {
+            $json = $value;
+        }
+
+        $decoded = json_decode($json, true);
+        if (is_array($decoded)) {
+            return array_values($decoded);
+        }
+
+        // Fallback to single string
+        return [$json];
+    }
+
+    /**
+     * Normalize and encrypt images before saving to DB.
+     * Accepts UUID=>path maps (from Filament), indexed arrays, or JSON strings.
+     */
+    public function setImagesAttribute($value)
+    {
+        $arr = [];
+
+        if (is_string($value)) {
+            $decoded = json_decode($value, true);
+            $arr = is_array($decoded) ? $decoded : [$value];
+        } elseif (is_array($value)) {
+            $arr = $value;
+        }
+
+        // Drop any client-side UUID keys and keep plain indexed array of paths
+        $arr = array_values($arr);
+
+        $json = json_encode($arr);
+
+        // Encrypt JSON for storage
+        $this->attributes['images'] = Crypt::encryptString($json);
+    }
 
     /**
      * Prepare and attach selected image URLs (thumbnail and full) and image count
