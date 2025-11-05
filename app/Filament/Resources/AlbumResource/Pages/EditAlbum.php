@@ -21,8 +21,9 @@ class EditAlbum extends EditRecord
 
     protected function afterSave(): void
     {
-        // Move new images from temp folder to album folder and generate thumbnails
-        ImageService::moveImagesFromTempFolderToIdAlbumFolder($this->record);
+    // Move new images from temp folder to album folder and generate thumbnails
+    // Ensure newly attached images are encrypted when stored to S3
+    ImageService::moveImagesFromTempFolderToIdAlbumFolder($this->record);
 
         // Delete images that were removed
         ImageService::deleteAllImagesWhoAreNotInJsonFromStorage($this->record);

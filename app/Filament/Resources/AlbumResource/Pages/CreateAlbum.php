@@ -13,8 +13,8 @@ class CreateAlbum extends CreateRecord
 
     public function afterCreate(): void
     {
-        // First move images from temp folder
-        ImageService::moveImagesFromTempFolderToIdAlbumFolder($this->record);
+    // First move images from temp folder and ensure they are encrypted on S3
+    ImageService::moveImagesFromTempFolderToIdAlbumFolder($this->record);
 
         // Then extract metadata and update metadata field
         MetaDataService::extractAndSaveMetadata($this->record);

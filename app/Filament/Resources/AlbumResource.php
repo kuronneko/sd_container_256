@@ -18,6 +18,7 @@ use App\Filament\Resources\AlbumResource\Pages;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use App\Filament\Resources\AlbumResource\RelationManagers;
 use App\Services\ImageService;
+use Illuminate\Support\Facades\Crypt;
 
 class AlbumResource extends Resource
 {
@@ -95,6 +96,110 @@ class AlbumResource extends Resource
                         }
 
                         return $state;
+                    })
+                    // Ensure Filament's preview/open/download use our decrypting route for full images
+                    ->getUploadedFileUsing(function ($component, $file, $storedFileNames) {
+                        $disk = config('filesystems.default');
+                        $uploadFolder = $disk === 's3' ? config('filesystems.disks.s3.upload_folder', 'sd_develop') : '';
+
+                        // If the stored path contains the upload folder prefix, remove it for normalization
+                        $normalized = $file;
+                        if ($uploadFolder && strpos($normalized, $uploadFolder . '/') === 0) {
+                            $normalized = substr($normalized, strlen($uploadFolder) + 1);
+                        }
+
+                        $name = basename($file);
+                        $size = 0;
+                        $type = null;
+                        $url = null;
+
+                        try {
+                            $storage = $component->getDisk();
+                            if ($storage->exists($file)) {
+                                $size = $storage->size($file);
+                                $type = $storage->mimeType($file);
+                            }
+                        } catch (\Exception $e) {
+                            // ignore
+                        }
+
+                        // If the storage reports a non-image mime (e.g. encrypted objects show application/octet-stream),
+                        // infer the MIME type from the file extension so Filament will render an image preview.
+                        if (empty($type) || !str_starts_with($type, 'image/')) {
+                            $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+                            $map = [
+                                'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png',
+                                'gif' => 'image/gif', 'webp' => 'image/webp', 'svg' => 'image/svg+xml',
+                                'bmp' => 'image/bmp', 'tiff' => 'image/tiff',
+                            ];
+                            if (isset($map[$ext])) {
+                                $type = $map[$ext];
+                            }
+                        }
+
+                        // If this looks like an album file (albums/{id}/filename), route to our decrypt controller
+                        $segments = explode('/', $normalized);
+                        if (isset($segments[0]) && $segments[0] === 'albums' && isset($segments[1]) && is_numeric($segments[1])) {
+                            $albumId = $segments[1];
+                            $filename = basename($file);
+                            $url = url("/albums/{$albumId}/image/{$filename}");
+                        }
+
+                        // Fallback to storage URL if we couldn't build decrypt route
+                        if (! $url) {
+                            try {
+                                $url = $component->getVisibility() === 'private'
+                                    ? $component->getDisk()->temporaryUrl($file, now()->addMinutes(5))
+                                    : $component->getDisk()->url($file);
+                            } catch (\Throwable $e) {
+                                $url = $component->getDisk()->url($file);
+                            }
+                        }
+
+                        return [
+                            'name' => $storedFileNames[$file] ?? $name,
+                            'size' => $size,
+                            'type' => $type,
+                            'url' => $url,
+                        ];
+                    })
+                    ->saveUploadedFileUsing(function ($component, $file) {
+                        // $file is a Livewire TemporaryUploadedFile
+                        $diskName = $component->getDiskName();
+                        $directory = trim($component->getDirectory(), '/');
+                        $fileName = $component->getUploadedFileNameForStorage($file);
+                        $path = trim($directory . '/' . $fileName, '/');
+
+                        // If using S3, only encrypt when saving into an album folder (albums/{id}).
+                        // Files uploaded to the temp folder should remain plaintext so the move routine
+                        // can perform a single encrypt-on-move operation.
+                        $isAlbumFolder = (bool) preg_match('#(^|/)albums/\d+$#', $directory);
+
+                        if ($diskName === 's3' && $isAlbumFolder) {
+                            try {
+                                $realPath = method_exists($file, 'getRealPath') ? $file->getRealPath() : ($file->getPath() ?? null);
+                                $contents = $realPath ? file_get_contents($realPath) : $file->get();
+                                $encrypted = Crypt::encryptString(base64_encode($contents));
+                                $component->getDisk()->put($path, $encrypted, ['visibility' => $component->getVisibility()]);
+
+                                // Generate thumbnail for the stored image (stored in album thumbnails)
+                                ImageService::generateThumbnail($directory, $path);
+
+                                return $path;
+                            } catch (\Exception $e) {
+                                logger()->error('Error saving encrypted upload: ' . $e->getMessage());
+                                return null;
+                            }
+                        }
+
+                        // Fallback to default store behavior for non-S3 disks
+                        try {
+                            $storeMethod = $component->getVisibility() === 'public' ? 'storePubliclyAs' : 'storeAs';
+                            return $file->{$storeMethod}($directory, $fileName, $diskName);
+                        } catch (\Throwable $e) {
+                            logger()->error('Error saving upload: ' . $e->getMessage());
+                            return null;
+                        }
                     })
                     ->maxFiles(10)
                     ->columnSpanFull()

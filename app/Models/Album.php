@@ -123,7 +123,8 @@ class Album extends Model
             $cdnUrl = "https://{$bucket}.{$region}.cdn.digitaloceanspaces.com";
 
             $this->selected_thumbnail_url = "{$cdnUrl}/{$uploadFolder}/albums/{$this->id}/thumbnails/{$filename}";
-            $this->selected_image_url = "{$cdnUrl}/{$uploadFolder}/albums/{$this->id}/{$filename}";
+            // Full images are stored encrypted on S3; expose a local route that will decrypt and stream them.
+            $this->selected_image_url = url("/albums/{$this->id}/image/{$filename}");
         } else {
             $disk = config('filesystems.default');
             $diskUrl = config("filesystems.disks.{$disk}.url");

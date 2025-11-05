@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Album;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Crypt;
 
 class MetaDataService
 {
@@ -107,6 +108,16 @@ class MetaDataService
     {
         try {
             $imageContent = Storage::disk($disk)->get($imagePath);
+
+            // If the image is stored encrypted on S3, try to decrypt it first
+            if ($disk === 's3') {
+                try {
+                    $decoded = Crypt::decryptString($imageContent);
+                    $imageContent = base64_decode($decoded);
+                } catch (\Exception $e) {
+                    // If decrypt fails, assume plaintext image; continue
+                }
+            }
             $tempFile = tempnam(sys_get_temp_dir(), 'img_metadata');
             file_put_contents($tempFile, $imageContent);
 
