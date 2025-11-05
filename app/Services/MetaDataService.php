@@ -264,9 +264,26 @@ class MetaDataService
                     break;
 
                 case 'LoraLoader':
-                    // Extract LoRA names (collect all LoRAs)
+                    // Extract LoRA names (collect all LoRAs) and include strengths when available
                     if (isset($inputs['lora_name'])) {
-                        $loraNames[] = $inputs['lora_name'];
+                        $name = $inputs['lora_name'];
+
+                        // strength for model and clip may be present
+                        $strengthModel = $inputs['strength_model'] ?? null;
+                        $strengthClip = $inputs['strength_clip'] ?? null;
+
+                        if ($strengthModel !== null || $strengthClip !== null) {
+                            $parts = [];
+                            if ($strengthModel !== null) {
+                                $parts[] = 'model: ' . $strengthModel;
+                            }
+                            if ($strengthClip !== null) {
+                                $parts[] = 'clip: ' . $strengthClip;
+                            }
+                            $name = $name . ' (' . implode(', ', $parts) . ')';
+                        }
+
+                        $loraNames[] = $name;
                     }
                     break;
 
