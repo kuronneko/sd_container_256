@@ -138,7 +138,7 @@ class ImageService
         $album->save();
     }
 
-    public static function generateThumbnail($mainNewDirectory, $mainImageUrl)
+    public static function generateThumbnail($mainNewDirectory, $mainImageUrl, bool $force = false)
     {
         $disk = self::getDisk();
         $thumbnailDirectory = "{$mainNewDirectory}/thumbnails";
@@ -146,7 +146,7 @@ class ImageService
         $thumbnailPath = "{$thumbnailDirectory}/{$thumbnailFileName}";
 
         // Check if thumbnail already exists
-        if (Storage::disk($disk)->exists($thumbnailPath)) {
+        if (Storage::disk($disk)->exists($thumbnailPath) && ! $force) {
             return;
         }
 

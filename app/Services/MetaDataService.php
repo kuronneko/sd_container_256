@@ -119,12 +119,19 @@ class MetaDataService
                     // If decrypt fails, assume plaintext image; continue
                 }
             }
-            $tempFile = tempnam(sys_get_temp_dir(), 'img_metadata');
-            file_put_contents($tempFile, $imageContent);
+            // Use an in-memory stream instead of a temporary file to avoid writing
+            // decrypted image bytes to disk.
+            $stream = fopen('php://memory', 'r+');
+            if ($stream === false) {
+                throw new \Exception('Unable to open memory stream for metadata extraction');
+            }
 
-            $comfyuiData = self::extractPNGMetadata($tempFile);
+            fwrite($stream, $imageContent);
+            rewind($stream);
 
-            unlink($tempFile);
+            $comfyuiData = self::extractPNGMetadata($stream);
+
+            fclose($stream);
 
             return !empty($comfyuiData) ? $comfyuiData : null;
 
@@ -137,13 +144,27 @@ class MetaDataService
     /**
      * Extract PNG text chunks for ComfyUI metadata
      */
-    protected static function extractPNGMetadata(string $tempFile): array
+    /**
+     * Extract PNG text chunks for ComfyUI metadata
+     *
+     * Accepts either a path (string) or an open stream resource (php://memory, php://temp, etc.).
+     *
+     * @param string|resource $source
+     */
+    protected static function extractPNGMetadata($source): array
     {
         $comfyuiData = [];
 
         try {
             // Read PNG file and extract text chunks
-            $handle = fopen($tempFile, 'rb');
+            $openedHere = false;
+            if (is_string($source)) {
+                $handle = fopen($source, 'rb');
+                $openedHere = true;
+            } else {
+                $handle = $source;
+            }
+
             if (!$handle) return [];
 
             // Skip PNG signature
@@ -179,7 +200,9 @@ class MetaDataService
                 if ($chunkType === 'IEND') break;
             }
 
-            fclose($handle);
+            if ($openedHere) {
+                fclose($handle);
+            }
         } catch (\Exception $e) {
             Log::error('Error reading PNG metadata: ' . $e->getMessage());
         }

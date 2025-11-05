@@ -15,7 +15,7 @@ class ImageController extends Controller
      * Note: thumbnails remain public on the bucket for fast display. Full images
      * are stored encrypted and must be routed through this controller.
      */
-    public function showFromS3($albumId, $filename)
+    public function showImage($albumId, $filename)
     {
         $disk = config('filesystems.default');
 
@@ -48,6 +48,50 @@ class ImageController extends Controller
 
         return response($decrypted, 200)
             ->header('Content-Type', $mime)
-            ->header('Content-Disposition', 'inline; filename="' . $filename . '"');
+            ->header('Content-Disposition', 'inline; filename="' . $filename . '"')
+            ->header('Cache-Control', 'no-store, private')
+            ->header('Pragma', 'no-cache')
+            ->header('Expires', '0');
+    }
+
+    /**
+     * Stream a decrypted thumbnail from storage (for encrypted disks).
+     */
+    public function showThumbnail($albumId, $filename)
+    {
+        $disk = config('filesystems.default');
+
+        if ($disk === 's3') {
+            $uploadFolder = config('filesystems.disks.s3.upload_folder', 'sd_develop');
+            $path = "{$uploadFolder}/albums/{$albumId}/thumbnails/{$filename}";
+        } else {
+            $path = "albums/{$albumId}/thumbnails/{$filename}";
+        }
+
+        if (!Storage::disk($disk)->exists($path)) {
+            abort(404);
+        }
+
+        $contents = Storage::disk($disk)->get($path);
+
+        $decrypted = $contents;
+        if (ImageService::isEncryptedDisk($disk)) {
+            try {
+                $decrypted = base64_decode(Crypt::decryptString($contents));
+            } catch (\Exception $e) {
+                abort(404);
+            }
+        }
+
+        $finfo = finfo_open();
+        $mime = finfo_buffer($finfo, $decrypted, FILEINFO_MIME_TYPE);
+        finfo_close($finfo);
+
+        return response($decrypted, 200)
+            ->header('Content-Type', $mime)
+            ->header('Content-Disposition', 'inline; filename="' . $filename . '"')
+            ->header('Cache-Control', 'no-store, private')
+            ->header('Pragma', 'no-cache')
+            ->header('Expires', '0');
     }
 }

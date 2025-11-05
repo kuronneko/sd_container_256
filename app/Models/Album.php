@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Crypt;
+use App\Services\ImageService;
 
 class Album extends Model
 {
@@ -116,17 +117,25 @@ class Album extends Model
         $randKey = array_rand($images);
         $filename = basename($images[$randKey]);
 
-        if (config('filesystems.default') === 's3') {
-            $uploadFolder = config('filesystems.disks.s3.upload_folder', 'sd_develop');
+        $disk = config('filesystems.default');
+        $uploadFolder = $disk === 's3' ? config('filesystems.disks.s3.upload_folder', 'sd_develop') : '';
+
+        // If this disk is configured to keep images encrypted at rest, route both
+        // thumbnail and full image through our decrypting controller so the app
+        // can decrypt on-the-fly. This covers 's3' and any other disk listed in
+        // image_encrypt.encrypted_disks (for example 'public').
+        if (ImageService::isEncryptedDisk($disk)) {
+            $this->selected_thumbnail_url = url("/albums/{$this->id}/thumbnail/{$filename}");
+            $this->selected_image_url = url("/albums/{$this->id}/image/{$filename}");
+        } else if ($disk === 's3') {
+            // Unencrypted S3: point thumbnails to the CDN for speed and full image to controller
             $bucket = config('filesystems.disks.s3.bucket');
             $region = config('filesystems.disks.s3.region');
             $cdnUrl = "https://{$bucket}.{$region}.cdn.digitaloceanspaces.com";
-
             $this->selected_thumbnail_url = "{$cdnUrl}/{$uploadFolder}/albums/{$this->id}/thumbnails/{$filename}";
-            // Full images are stored encrypted on S3; expose a local route that will decrypt and stream them.
             $this->selected_image_url = url("/albums/{$this->id}/image/{$filename}");
         } else {
-            $disk = config('filesystems.default');
+            // Local disk: if the disk exposes a URL, use it; otherwise build a storage URL.
             $diskUrl = config("filesystems.disks.{$disk}.url");
             if ($diskUrl) {
                 $this->selected_thumbnail_url = rtrim($diskUrl, '/') . "/albums/{$this->id}/thumbnails/{$filename}";

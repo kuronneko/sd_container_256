@@ -23,5 +23,5 @@ return [
     | If true, thumbnails will also be encrypted. Default false because
     | unencrypted thumbnails can be cached and are faster to serve.
     */
-    'encrypt_thumbnails' => false,
+    'encrypt_thumbnails' => true,
 ];
