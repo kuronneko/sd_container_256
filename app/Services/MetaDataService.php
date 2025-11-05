@@ -110,13 +110,16 @@ class MetaDataService
         try {
             $imageContent = Storage::disk($disk)->get($imagePath);
 
-            // If the image is stored encrypted on configured disks, try to decrypt it first
+            // If the image is stored encrypted on configured disks, try to decrypt it first.
+            // If decryption fails, abort metadata extraction for this image (to avoid
+            // processing ciphertext and producing misleading errors).
             if (ImageService::isEncryptedDisk($disk)) {
                 try {
                     $decoded = Crypt::decryptString($imageContent);
                     $imageContent = base64_decode($decoded);
                 } catch (\Exception $e) {
-                    // If decrypt fails, assume plaintext image; continue
+                    Log::warning('Skipping metadata extraction for ' . $imagePath . ': decryption failed.');
+                    return null;
                 }
             }
             // Use an in-memory stream instead of a temporary file to avoid writing

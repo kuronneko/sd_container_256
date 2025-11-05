@@ -151,15 +151,18 @@ class ImageService
         }
 
         try {
-            // Get the original image content. If stored encrypted on S3, try to decrypt first.
+            // Get the original image content.
             $imageContent = Storage::disk($disk)->get($mainImageUrl);
 
             if (self::isEncryptedDisk($disk)) {
+                // Try to decrypt; if decryption fails, abort thumbnail generation to avoid
+                // passing ciphertext to Intervention which will log decoding errors.
                 try {
                     $decoded = Crypt::decryptString($imageContent);
                     $imageContent = base64_decode($decoded);
                 } catch (\Exception $e) {
-                    // If decrypt fails, assume the file is plain; continue with original content
+                    Log::warning('Skipping thumbnail generation for ' . $mainImageUrl . ': decryption failed.');
+                    return;
                 }
             }
 

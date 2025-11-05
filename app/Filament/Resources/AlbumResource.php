@@ -19,6 +19,7 @@ use Illuminate\Database\Eloquent\SoftDeletingScope;
 use App\Filament\Resources\AlbumResource\RelationManagers;
 use App\Services\ImageService;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\Storage;
 
 class AlbumResource extends Resource
 {
@@ -192,8 +193,19 @@ class AlbumResource extends Resource
                             }
                         }
 
-                        // Fallback to default store behavior for non-S3 disks
+                        // Fallback: avoid Livewire's store* helpers writing temporary files to the disk root
+                        // (which can create folders like `livewire-temp` on S3). For S3 or any disk
+                        // configured as encrypted we write directly using Storage::disk()->put().
                         try {
+                            if ($diskName === 's3' || ImageService::isEncryptedDisk($diskName)) {
+                                $realPath = method_exists($file, 'getRealPath') ? $file->getRealPath() : null;
+                                $contents = $realPath ? file_get_contents($realPath) : $file->get();
+                                Storage::disk($diskName)->put($path, $contents, ['visibility' => $component->getVisibility()]);
+                                // Generate thumbnail for the stored image (stored in album thumbnails)
+                                ImageService::generateThumbnail($directory, $path);
+                                return $path;
+                            }
+
                             $storeMethod = $component->getVisibility() === 'public' ? 'storePubliclyAs' : 'storeAs';
                             return $file->{$storeMethod}($directory, $fileName, $diskName);
                         } catch (\Throwable $e) {
