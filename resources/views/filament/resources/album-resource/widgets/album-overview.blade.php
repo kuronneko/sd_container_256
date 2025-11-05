@@ -7,7 +7,7 @@
     <br>
 
     <form wire:submit.prevent="submit">
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
                 {{ $this->form }}
             </div>

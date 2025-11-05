@@ -28,7 +28,7 @@ class AlbumOverview extends Widget implements HasForms
     protected function getFormSchema(): array
     {
         return [
-            Forms\Components\Grid::make()
+            Forms\Components\Grid::make(2)
                 ->schema([
                     Forms\Components\DatePicker::make('startDate')
                         ->label('Start date')
@@ -40,12 +40,14 @@ class AlbumOverview extends Widget implements HasForms
                         ->default(Carbon::now()->endOfMonth())
                         ->required()
                         ->columnSpan(1),
-                ])
-                ->columnSpan('full'),
-            Forms\Components\TextInput::make('search')
-                ->label('Search')
-                ->placeholder('Search positive, negative, seed or model name (ckpt_name)')
-                ->columnSpan('full'),
+                ]),
+            Forms\Components\Grid::make()
+                ->schema([
+                    Forms\Components\TextInput::make('search')
+                        ->label('Search')
+                        ->placeholder('Search positive, negative, seed or model name (ckpt_name)')
+                        ->columnSpan(2),
+                ]),
         ];
     }
 
