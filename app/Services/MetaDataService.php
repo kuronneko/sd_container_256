@@ -23,8 +23,8 @@ class MetaDataService
             : '';
 
         $albumsDirectory = $disk === 's3'
-            ? "{$uploadFolder}/albums"
-            : "albums";
+            ? "{$uploadFolder}/albums/{$album->id}"
+            : "albums/{$album->id}";
 
         // Get images from the record
         $images = $album->images ?? [];
@@ -37,19 +37,32 @@ class MetaDataService
 
             Log::debug('Processing image', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
 
+            // First check if metadata was already extracted during upload (stored in session)
+            $sessionKey = "image_metadata_{$fileName}";
+            $comfyuiData = session()->get($sessionKey);
+
+            if ($comfyuiData) {
+                Log::info('Found pre-extracted metadata in session', ['album_id' => $album->id, 'file_name' => $fileName]);
+                self::saveComfyUIMetadata($album, $comfyuiData);
+                session()->forget($sessionKey);
+                Log::info('extractAndSaveMetadata completed (session metadata)', ['album_id' => $album->id, 'file_name' => $fileName]);
+                break; // Use data from first image with ComfyUI data
+            }
+
+            // Fallback: extract from encrypted image on disk (for images uploaded via other paths)
             if (Storage::disk($disk)->exists($imagePath)) {
-                Log::info('Found image in albums folder', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
-                Log::info('Extracting metadata from image', ['album_id' => $album->id, 'disk' => $disk, 'image_path' => $imagePath]);
+                Log::info('Found image in album folder, attempting disk extraction', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
+                Log::debug('Extracting metadata from image file', ['album_id' => $album->id, 'disk' => $disk, 'image_path' => $imagePath]);
                 $comfyuiData = self::extractComfyUIData($imagePath, $disk);
                 if ($comfyuiData) {
-                    Log::info('ComfyUI data extracted, saving metadata', ['album_id' => $album->id, 'disk' => $disk]);
+                    Log::info('ComfyUI data extracted from file, saving metadata', ['album_id' => $album->id, 'disk' => $disk]);
                     // Save prompt + workflow in metadata field and populate album fields
                     self::saveComfyUIMetadata($album, $comfyuiData);
-                    Log::info('extractAndSaveMetadata completed (metadata found)', ['album_id' => $album->id, 'disk' => $disk]);
+                    Log::info('extractAndSaveMetadata completed (file extraction)', ['album_id' => $album->id, 'disk' => $disk]);
                     break; // Use data from first image with ComfyUI data
                 }
             } else {
-                Log::warning('Image not found in albums folder', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
+                Log::warning('Image not found in album folder', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
             }
         }
 
@@ -70,42 +83,57 @@ class MetaDataService
             return;
         }
 
-        // Get the first image to extract metadata from
-        $firstImage = $images[0];
-        $fileName = basename($firstImage);
-
-        Log::debug('Extracting metadata from first image', ['album_id' => $album->id, 'file_name' => $fileName]);
-
         $disk = config('filesystems.default');
         $uploadFolder = $disk === 's3'
             ? config('filesystems.disks.s3.upload_folder', 'sd_develop')
             : '';
 
-        // Check albums folder
-        $imagePath = null;
-        $albumsPath = $disk === 's3'
-            ? "{$uploadFolder}/albums/{$fileName}"
-            : "albums/{$fileName}";
+        // Process each image to find and extract metadata
+        foreach ($images as $image) {
+            $fileName = basename($image);
+            Log::debug('Processing image for metadata', ['album_id' => $album->id, 'file_name' => $fileName]);
 
-        if (Storage::disk($disk)->exists($albumsPath)) {
-            $imagePath = $albumsPath;
-            Log::debug('Found image in albums folder', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
-        } else {
-            Log::warning('Image not found in albums folder', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
-        }
+            // First check if metadata was already extracted during upload (stored in session)
+            $sessionKey = "image_metadata_{$fileName}";
+            $comfyuiData = session()->get($sessionKey);
 
-        if ($imagePath) {
-            Log::info('Extracting ComfyUI data', ['album_id' => $album->id, 'disk' => $disk, 'image_path' => $imagePath]);
-            $comfyuiData = self::extractComfyUIData($imagePath, $disk);
             if ($comfyuiData) {
-                Log::info('ComfyUI data found, saving metadata', ['album_id' => $album->id, 'disk' => $disk]);
+                Log::info('Found pre-extracted metadata in session', ['album_id' => $album->id, 'file_name' => $fileName]);
                 self::saveComfyUIMetadata($album, $comfyuiData);
+                session()->forget($sessionKey);
+                Log::info('updateMetadataFromImages completed (session metadata)', ['album_id' => $album->id, 'file_name' => $fileName]);
+                return; // Use data from first image with ComfyUI data
+            }
+
+            // Fallback: extract from encrypted image on disk (for images uploaded via other paths)
+            $imagePath = null;
+            $albumsPath = $disk === 's3'
+                ? "{$uploadFolder}/albums/{$album->id}/{$fileName}"
+                : "albums/{$album->id}/{$fileName}";
+
+            if (Storage::disk($disk)->exists($albumsPath)) {
+                $imagePath = $albumsPath;
+                Log::debug('Found image in album folder', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
             } else {
-                Log::info('No ComfyUI data found in image', ['album_id' => $album->id, 'disk' => $disk]);
+                Log::debug('Image not found in album folder', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
+                continue; // Try next image
+            }
+
+            if ($imagePath) {
+                Log::info('Extracting ComfyUI data from disk', ['album_id' => $album->id, 'disk' => $disk, 'image_path' => $imagePath]);
+                $comfyuiData = self::extractComfyUIData($imagePath, $disk);
+                if ($comfyuiData) {
+                    Log::info('ComfyUI data found, saving metadata', ['album_id' => $album->id, 'disk' => $disk]);
+                    self::saveComfyUIMetadata($album, $comfyuiData);
+                    Log::info('updateMetadataFromImages completed (disk extraction)', ['album_id' => $album->id, 'disk' => $disk]);
+                    return; // Use data from first image with ComfyUI data
+                } else {
+                    Log::debug('No ComfyUI data found in this image', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
+                }
             }
         }
 
-        Log::info('updateMetadataFromImages completed', ['album_id' => $album->id, 'disk' => $disk]);
+        Log::info('updateMetadataFromImages completed (no metadata found)', ['album_id' => $album->id, 'disk' => $disk]);
     }
 
     /**
@@ -158,6 +186,52 @@ class MetaDataService
 
         } catch (\Exception $e) {
             Log::error('Error extracting ComfyUI data from ' . $imagePath . ': ' . $e->getMessage(), ['disk' => $disk]);
+            return null;
+        }
+    }
+
+    /**
+     * Extract metadata from plaintext image content (before encryption)
+     * This avoids needing to decrypt the image later just to get metadata
+     *
+     * @param string $imageContent Raw image bytes
+     * @return array|null ComfyUI metadata array or null if not found
+     */
+    public static function extractMetadataFromContent($imageContent)
+    {
+        Log::info('extractMetadataFromContent started');
+
+        try {
+            if (empty($imageContent)) {
+                Log::warning('Empty image content provided for metadata extraction');
+                return null;
+            }
+
+            // Use an in-memory stream to avoid writing to disk
+            Log::debug('Opening memory stream for PNG metadata extraction');
+            $stream = fopen('php://memory', 'r+');
+            if ($stream === false) {
+                throw new \Exception('Unable to open memory stream for metadata extraction');
+            }
+
+            fwrite($stream, $imageContent);
+            rewind($stream);
+
+            Log::debug('Extracting PNG metadata from content');
+            $comfyuiData = self::extractPNGMetadata($stream);
+
+            fclose($stream);
+
+            if (!empty($comfyuiData)) {
+                Log::info('ComfyUI data extracted successfully from content', ['data_keys' => array_keys($comfyuiData)]);
+            } else {
+                Log::debug('No ComfyUI data found in image content');
+            }
+
+            return !empty($comfyuiData) ? $comfyuiData : null;
+
+        } catch (\Exception $e) {
+            Log::error('Error extracting ComfyUI data from content: ' . $e->getMessage());
             return null;
         }
     }

@@ -18,8 +18,10 @@ use App\Filament\Resources\AlbumResource\Pages;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use App\Filament\Resources\AlbumResource\RelationManagers;
 use App\Services\ImageService;
+use App\Services\MetaDataService;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Log;
 
 class AlbumResource extends Resource
 {
@@ -133,11 +135,12 @@ class AlbumResource extends Resource
                             }
                         }
 
-                        // If this looks like an album file (albums/filename), route to our decrypt controller
+                        // If this looks like an album file (albums/albumId/filename), route to our decrypt controller
                         $segments = explode('/', $normalized);
-                        if (isset($segments[0]) && $segments[0] === 'albums') {
+                        if (isset($segments[0]) && $segments[0] === 'albums' && isset($segments[1])) {
+                            $albumId = $segments[1];
                             $filename = basename($file);
-                            $url = url("/albums/image/{$filename}");
+                            $url = url("/albums/image/{$albumId}/{$filename}");
                         }
 
                         // Fallback to storage URL if we couldn't build decrypt route
@@ -165,41 +168,39 @@ class AlbumResource extends Resource
                         $fileName = $component->getUploadedFileNameForStorage($file);
                         $path = trim($directory . '/' . $fileName, '/');
 
-                        // If using S3, only encrypt when saving into an album folder (albums/{id}).
-                        // Files uploaded to the temp folder should remain plaintext so the move routine
-                        // can perform a single encrypt-on-move operation.
-                        $isAlbumFolder = (bool) preg_match('#(^|/)albums/\d+$#', $directory);
-
-                        if (ImageService::isEncryptedDisk($diskName) && $isAlbumFolder) {
+                        // For encrypted disks, encrypt the file BEFORE uploading to S3
+                        // This prevents any unencrypted temporary storage on S3
+                        if (ImageService::isEncryptedDisk($diskName)) {
                             try {
+                                // Read file contents from the temporary upload
                                 $realPath = method_exists($file, 'getRealPath') ? $file->getRealPath() : ($file->getPath() ?? null);
                                 $contents = $realPath ? file_get_contents($realPath) : $file->get();
+
+                                // Extract metadata from the plaintext image BEFORE encryption
+                                // Store it in a temporary session for later use during ensureImagesProcessed
+                                $metadata = MetaDataService::extractMetadataFromContent($contents);
+                                if ($metadata) {
+                                    session()->put("image_metadata_{$fileName}", $metadata);
+                                    Log::info('Image metadata extracted and stored', ['filename' => $fileName, 'has_metadata' => true]);
+                                }
+
+                                // Encrypt the contents in memory
                                 $encrypted = Crypt::encryptString($contents);
+
+                                // Upload the encrypted file directly to the configured directory
                                 $component->getDisk()->put($path, $encrypted, ['visibility' => $component->getVisibility()]);
 
-                                // Generate thumbnail for the stored image (stored in album thumbnails)
-                                ImageService::generateThumbnail($directory, $path);
+                                Log::info('Encrypted file uploaded', ['path' => $path, 'disk' => $diskName]);
 
                                 return $path;
                             } catch (\Exception $e) {
-                                logger()->error('Error saving encrypted upload: ' . $e->getMessage());
+                                logger()->error('Error encrypting and uploading file: ' . $e->getMessage());
                                 return null;
                             }
                         }
 
-                        // Fallback: avoid Livewire's store* helpers writing temporary files to the disk root
-                        // (which can create folders like `livewire-temp` on S3). For S3 or any disk
-                        // configured as encrypted we write directly using Storage::disk()->put().
+                        // For non-encrypted disks, use normal storage
                         try {
-                            if ($diskName === 's3' || ImageService::isEncryptedDisk($diskName)) {
-                                $realPath = method_exists($file, 'getRealPath') ? $file->getRealPath() : null;
-                                $contents = $realPath ? file_get_contents($realPath) : $file->get();
-                                Storage::disk($diskName)->put($path, $contents, ['visibility' => $component->getVisibility()]);
-                                // Generate thumbnail for the stored image (stored in album thumbnails)
-                                ImageService::generateThumbnail($directory, $path);
-                                return $path;
-                            }
-
                             $storeMethod = $component->getVisibility() === 'public' ? 'storePubliclyAs' : 'storeAs';
                             return $file->{$storeMethod}($directory, $fileName, $diskName);
                         } catch (\Throwable $e) {

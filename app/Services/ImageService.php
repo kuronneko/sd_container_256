@@ -59,23 +59,51 @@ class ImageService
         Log::info('Processing images', ['album_id' => $album->id, 'disk' => $disk, 'image_count' => count($images)]);
 
         $albumsDirectory = $disk === 's3' ? "{$uploadFolder}/albums" : "albums";
-        $thumbnailDirectory = "{$albumsDirectory}/thumbnails";
+        $albumSpecificDirectory = $disk === 's3' ? "{$uploadFolder}/albums/{$album->id}" : "albums/{$album->id}";
+        $thumbnailDirectory = "{$albumSpecificDirectory}/thumbnails";
 
-        Log::debug('Directory paths', ['album_id' => $album->id, 'disk' => $disk, 'albums_directory' => $albumsDirectory, 'thumbnail_directory' => $thumbnailDirectory]);
+        Log::debug('Directory paths', ['album_id' => $album->id, 'disk' => $disk, 'albums_directory' => $albumsDirectory, 'album_specific_directory' => $albumSpecificDirectory, 'thumbnail_directory' => $thumbnailDirectory]);
 
         // Process each image
         foreach ($images as &$image) {
             $fileName = basename($image);
-            $imagePath = "{$albumsDirectory}/{$fileName}";
+            $baseImagePath = "{$albumsDirectory}/{$fileName}";
+            $albumImagePath = "{$albumSpecificDirectory}/{$fileName}";
             $thumbnailPath = "{$thumbnailDirectory}/{$fileName}";
 
-            Log::debug('Processing image', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName, 'image_path' => $imagePath]);
+            Log::debug('Processing image', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName, 'base_path' => $baseImagePath, 'album_path' => $albumImagePath]);
 
-            // Check if image exists in albums folder
-            if (Storage::disk($disk)->exists($imagePath)) {
-                Log::info('Image already in albums folder', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName, 'path' => $imagePath]);
+            // Check if image exists in base albums folder or album-specific folder
+            $imagePath = null;
+            $isInBaseFolder = false;
 
-                // Image already in albums folder. Ensure it's encrypted on encrypted disks if needed, then check thumbnail.
+            if (Storage::disk($disk)->exists($baseImagePath)) {
+                $imagePath = $baseImagePath;
+                $isInBaseFolder = true;
+                Log::info('Image found in base albums folder', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
+            } elseif (Storage::disk($disk)->exists($albumImagePath)) {
+                $imagePath = $albumImagePath;
+                Log::info('Image already in album-specific folder', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
+            } else {
+                Log::warning('Image not found in either location', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName, 'base_path' => $baseImagePath, 'album_path' => $albumImagePath]);
+            }
+
+            if ($imagePath) {
+                // If image is in base folder, move it to album-specific folder
+                if ($isInBaseFolder) {
+                    Log::info('Moving image from base folder to album-specific folder', ['album_id' => $album->id, 'disk' => $disk, 'from' => $baseImagePath, 'to' => $albumImagePath]);
+                    try {
+                        $content = Storage::disk($disk)->get($baseImagePath);
+                        Storage::disk($disk)->put($albumImagePath, $content, ['visibility' => 'public']);
+                        Storage::disk($disk)->delete($baseImagePath);
+                        Log::info('Image moved successfully', ['album_id' => $album->id, 'disk' => $disk]);
+                        $imagePath = $albumImagePath;
+                    } catch (\Exception $e) {
+                        Log::error('Error moving image from base folder: ' . $e->getMessage(), ['album_id' => $album->id, 'disk' => $disk]);
+                    }
+                }
+
+                // Ensure it's encrypted on encrypted disks if needed
                 if (self::isEncryptedDisk($disk)) {
                     try {
                         $existing = Storage::disk($disk)->get($imagePath);
@@ -83,10 +111,10 @@ class ImageService
                         try {
                             Crypt::decryptString($existing);
                             Log::debug('Image already encrypted', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
-                            // already encrypted
+                            // already encrypted, nothing to do
                         } catch (\Exception $e) {
-                            // plaintext object found in albums folder — encrypt it in place
-                            Log::warning('Plaintext image found in albums folder, encrypting in place', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
+                            // plaintext object found — encrypt it in place (shouldn't happen with new upload flow)
+                            Log::warning('Plaintext image found, encrypting in place', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName, 'path' => $imagePath]);
                             try {
                                 $encrypted = Crypt::encryptString($existing);
                                 Storage::disk($disk)->put($imagePath, $encrypted, ['visibility' => 'public']);
@@ -101,21 +129,49 @@ class ImageService
                 }
 
                 // Generate thumbnail (generateThumbnail will attempt to decrypt if needed)
-                Log::info('Generating thumbnail for existing image', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
-                self::generateThumbnail($albumsDirectory, $imagePath);
-            } else {
-                Log::warning('Image not found in albums folder', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName, 'image_path' => $imagePath]);
+                Log::info('Generating thumbnail for image', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
+                self::generateThumbnail($albumSpecificDirectory, $imagePath);
             }
 
-            // Update the image path - normalize by removing upload folder prefix
-            $image = self::normalizePath($imagePath, $disk);
+            // Update the image path - normalize by removing upload folder prefix and use album-specific path
+            $image = self::normalizePath($albumImagePath, $disk);
             Log::debug('Image path updated', ['album_id' => $album->id, 'disk' => $disk, 'new_image_path' => $image]);
         }
 
         // Save the updated paths back to the JSON column
         $album->images = $images;
         $album->save();
-        Log::info('ensureImagesProcessed completed', ['album_id' => $album->id, 'disk' => $disk]);
+
+        // Apply any metadata that was extracted during upload (stored in session)
+        Log::info('Checking for extracted metadata in session', ['album_id' => $album->id]);
+        $metadataApplied = false;
+        foreach ($images as $image) {
+            $fileName = basename($image);
+            $sessionKey = "image_metadata_{$fileName}";
+            $extractedMetadata = session()->get($sessionKey);
+
+            if ($extractedMetadata) {
+                Log::info('Found extracted metadata for image in session', ['album_id' => $album->id, 'file_name' => $fileName, 'metadata_keys' => array_keys($extractedMetadata)]);
+
+                // Apply the metadata to the album
+                if (!empty($extractedMetadata['positive'])) {
+                    $album->positive = $extractedMetadata['positive'];
+                }
+                if (!empty($extractedMetadata['negative'])) {
+                    $album->negative = $extractedMetadata['negative'];
+                }
+                if (!empty($extractedMetadata['metadata'])) {
+                    $album->metadata = $extractedMetadata['metadata'];
+                }
+
+                $album->save();
+                session()->forget($sessionKey);
+                Log::info('Metadata applied to album and session cleared', ['album_id' => $album->id, 'file_name' => $fileName]);
+                $metadataApplied = true;
+            }
+        }
+
+        Log::info('ensureImagesProcessed completed', ['album_id' => $album->id, 'disk' => $disk, 'metadata_applied' => $metadataApplied]);
     }
 
     public static function generateThumbnail($mainNewDirectory, $mainImageUrl, bool $force = false)
