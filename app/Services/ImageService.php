@@ -88,7 +88,7 @@ class ImageService
                             // plaintext object found in albums folder — encrypt it in place
                             Log::warning('Plaintext image found in albums folder, encrypting in place', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
                             try {
-                                $encrypted = Crypt::encryptString(base64_encode($existing));
+                                $encrypted = Crypt::encryptString($existing);
                                 Storage::disk($disk)->put($imagePath, $encrypted, ['visibility' => 'public']);
                                 Log::info('Image encrypted in place', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
                             } catch (\Exception $e2) {
@@ -145,8 +145,7 @@ class ImageService
                 // Try to decrypt; if decryption fails, abort thumbnail generation to avoid
                 // passing ciphertext to Intervention which will log decoding errors.
                 try {
-                    $decoded = Crypt::decryptString($imageContent);
-                    $imageContent = base64_decode($decoded);
+                    $imageContent = Crypt::decryptString($imageContent);
                     Log::info('Image decrypted successfully', ['disk' => $disk, 'image_url' => $mainImageUrl]);
                 } catch (\Exception $e) {
                     Log::warning('Skipping thumbnail generation for ' . $mainImageUrl . ': decryption failed.', ['disk' => $disk]);
@@ -163,7 +162,7 @@ class ImageService
             if (config('image_encrypt.encrypt_thumbnails', false) && self::isEncryptedDisk($disk)) {
                 Log::info('Encrypting thumbnail', ['disk' => $disk, 'thumbnail_path' => $thumbnailPath]);
                 $thumbContents = $image->toJpeg();
-                $encryptedThumb = Crypt::encryptString(base64_encode($thumbContents));
+                $encryptedThumb = Crypt::encryptString($thumbContents);
                 Storage::disk($disk)->put($thumbnailPath, $encryptedThumb, ['visibility' => 'public']);
                 Log::info('Encrypted thumbnail saved', ['disk' => $disk, 'thumbnail_path' => $thumbnailPath]);
             } else {

@@ -44,7 +44,7 @@ class ImageController extends Controller
         if (ImageService::isEncryptedDisk($disk)) {
             Log::debug('Disk is encrypted, attempting to decrypt', ['disk' => $disk, 'filename' => $filename]);
             try {
-                $decrypted = base64_decode(Crypt::decryptString($contents));
+                $decrypted = Crypt::decryptString($contents);
                 Log::debug('Image decrypted successfully', ['disk' => $disk, 'filename' => $filename]);
             } catch (\Exception $e) {
                 Log::error('Decryption failed for image', ['disk' => $disk, 'filename' => $filename, 'error' => $e->getMessage()]);
@@ -96,7 +96,7 @@ class ImageController extends Controller
         if (ImageService::isEncryptedDisk($disk)) {
             Log::debug('Disk is encrypted, attempting to decrypt', ['disk' => $disk, 'filename' => $filename]);
             try {
-                $decrypted = base64_decode(Crypt::decryptString($contents));
+                $decrypted = Crypt::decryptString($contents);
                 Log::debug('Thumbnail decrypted successfully', ['disk' => $disk, 'filename' => $filename]);
             } catch (\Exception $e) {
                 Log::error('Decryption failed for thumbnail', ['disk' => $disk, 'filename' => $filename, 'error' => $e->getMessage()]);

@@ -125,8 +125,7 @@ class MetaDataService
             if (ImageService::isEncryptedDisk($disk)) {
                 Log::debug('Disk is encrypted, attempting decryption', ['disk' => $disk, 'image_path' => $imagePath]);
                 try {
-                    $decoded = Crypt::decryptString($imageContent);
-                    $imageContent = base64_decode($decoded);
+                    $imageContent = Crypt::decryptString($imageContent);
                     Log::debug('Image decrypted successfully', ['disk' => $disk, 'image_path' => $imagePath]);
                 } catch (\Exception $e) {
                     Log::warning('Skipping metadata extraction for ' . $imagePath . ': decryption failed.', ['disk' => $disk]);

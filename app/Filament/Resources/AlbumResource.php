@@ -174,7 +174,7 @@ class AlbumResource extends Resource
                             try {
                                 $realPath = method_exists($file, 'getRealPath') ? $file->getRealPath() : ($file->getPath() ?? null);
                                 $contents = $realPath ? file_get_contents($realPath) : $file->get();
-                                $encrypted = Crypt::encryptString(base64_encode($contents));
+                                $encrypted = Crypt::encryptString($contents);
                                 $component->getDisk()->put($path, $encrypted, ['visibility' => $component->getVisibility()]);
 
                                 // Generate thumbnail for the stored image (stored in album thumbnails)
