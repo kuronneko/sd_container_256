@@ -25,11 +25,10 @@ class EditAlbum extends EditRecord
     $disk = config('filesystems.default');
     Log::info('Album update started', ['album_id' => $this->record->id, 'image_count' => count($this->record->images ?? []), 'disk' => $disk]);
 
-        // Move new images from temp folder to album folder and generate thumbnails
-        // Ensure newly attached images are encrypted when stored to S3
-        Log::info('Starting to move new images from temp folder', ['album_id' => $this->record->id, 'disk' => $disk]);
-        ImageService::moveImagesFromTempFolderToIdAlbumFolder($this->record);
-        Log::info('New images moved', ['album_id' => $this->record->id, 'disk' => $disk]);
+        // Process and encrypt all images on encrypted disks and generate thumbnails
+        Log::info('Starting image processing', ['album_id' => $this->record->id, 'disk' => $disk]);
+        ImageService::ensureImagesProcessed($this->record);
+        Log::info('Images processed', ['album_id' => $this->record->id, 'disk' => $disk]);
 
         // Delete images that were removed
         Log::info('Deleting removed images from storage', ['album_id' => $this->record->id, 'disk' => $disk]);

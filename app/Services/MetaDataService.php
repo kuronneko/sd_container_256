@@ -16,46 +16,29 @@ class MetaDataService
     public static function extractAndSaveMetadata(Album $album): void
     {
         Log::info('extractAndSaveMetadata started', ['album_id' => $album->id, 'image_count' => count($album->images ?? [])]);
-        
+
         $disk = config('filesystems.default');
         $uploadFolder = $disk === 's3'
             ? config('filesystems.disks.s3.upload_folder', 'sd_develop')
             : '';
 
-        $tempDirectory = $disk === 's3'
-            ? "{$uploadFolder}/albums/temp"
-            : "albums/temp";
+        $albumsDirectory = $disk === 's3'
+            ? "{$uploadFolder}/albums"
+            : "albums";
 
         // Get images from the record
         $images = $album->images ?? [];
 
-        Log::debug('Processing album images', ['album_id' => $album->id, 'disk' => $disk, 'temp_directory' => $tempDirectory, 'image_count' => count($images)]);
+        Log::debug('Processing album images', ['album_id' => $album->id, 'disk' => $disk, 'albums_directory' => $albumsDirectory, 'image_count' => count($images)]);
 
         foreach ($images as $image) {
             $fileName = basename($image);
-            $tempPath = "{$tempDirectory}/{$fileName}";
+            $imagePath = "{$albumsDirectory}/{$fileName}";
 
             Log::debug('Processing image', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
 
-            // Try temp folder first, then album folder
-            $imagePath = null;
-            if (Storage::disk($disk)->exists($tempPath)) {
-                $imagePath = $tempPath;
-                Log::debug('Found image in temp folder', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
-            } else {
-                // Try the album folder
-                $albumPath = $disk === 's3'
-                    ? "{$uploadFolder}/albums/{$album->id}/{$fileName}"
-                    : "albums/{$album->id}/{$fileName}";
-                if (Storage::disk($disk)->exists($albumPath)) {
-                    $imagePath = $albumPath;
-                    Log::debug('Found image in album folder', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
-                } else {
-                    Log::warn('Image not found in temp or album folder', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
-                }
-            }
-
-            if ($imagePath) {
+            if (Storage::disk($disk)->exists($imagePath)) {
+                Log::info('Found image in albums folder', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
                 Log::info('Extracting metadata from image', ['album_id' => $album->id, 'disk' => $disk, 'image_path' => $imagePath]);
                 $comfyuiData = self::extractComfyUIData($imagePath, $disk);
                 if ($comfyuiData) {
@@ -65,9 +48,11 @@ class MetaDataService
                     Log::info('extractAndSaveMetadata completed (metadata found)', ['album_id' => $album->id, 'disk' => $disk]);
                     break; // Use data from first image with ComfyUI data
                 }
+            } else {
+                Log::warning('Image not found in albums folder', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
             }
         }
-        
+
         Log::info('extractAndSaveMetadata completed', ['album_id' => $album->id, 'disk' => $disk]);
     }
 
@@ -77,7 +62,7 @@ class MetaDataService
     public static function updateMetadataFromImages(Album $album): void
     {
         Log::info('updateMetadataFromImages started', ['album_id' => $album->id, 'image_count' => count($album->images ?? [])]);
-        
+
         $images = $album->images ?? [];
 
         if (empty($images)) {
@@ -96,26 +81,17 @@ class MetaDataService
             ? config('filesystems.disks.s3.upload_folder', 'sd_develop')
             : '';
 
-        // Try album folder first, then temp folder
+        // Check albums folder
         $imagePath = null;
-        $albumPath = $disk === 's3'
-            ? "{$uploadFolder}/albums/{$album->id}/{$fileName}"
-            : "albums/{$album->id}/{$fileName}";
+        $albumsPath = $disk === 's3'
+            ? "{$uploadFolder}/albums/{$fileName}"
+            : "albums/{$fileName}";
 
-        if (Storage::disk($disk)->exists($albumPath)) {
-            $imagePath = $albumPath;
-            Log::debug('Found image in album folder', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
+        if (Storage::disk($disk)->exists($albumsPath)) {
+            $imagePath = $albumsPath;
+            Log::debug('Found image in albums folder', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
         } else {
-            // Try temp folder
-            $tempPath = $disk === 's3'
-                ? "{$uploadFolder}/albums/temp/{$fileName}"
-                : "albums/temp/{$fileName}";
-            if (Storage::disk($disk)->exists($tempPath)) {
-                $imagePath = $tempPath;
-                Log::debug('Found image in temp folder', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
-            } else {
-                Log::warn('Image not found in album or temp folder', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
-            }
+            Log::warning('Image not found in albums folder', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
         }
 
         if ($imagePath) {
@@ -128,7 +104,7 @@ class MetaDataService
                 Log::info('No ComfyUI data found in image', ['album_id' => $album->id, 'disk' => $disk]);
             }
         }
-        
+
         Log::info('updateMetadataFromImages completed', ['album_id' => $album->id, 'disk' => $disk]);
     }
 
@@ -138,7 +114,7 @@ class MetaDataService
     protected static function extractComfyUIData(string $imagePath, string $disk): ?array
     {
         Log::info('extractComfyUIData started', ['disk' => $disk, 'image_path' => $imagePath]);
-        
+
         try {
             Log::debug('Reading image content', ['disk' => $disk, 'image_path' => $imagePath]);
             $imageContent = Storage::disk($disk)->get($imagePath);
@@ -263,7 +239,7 @@ class MetaDataService
     {
         $disk = config('filesystems.default');
         Log::info('saveComfyUIMetadata started', ['album_id' => $album->id, 'disk' => $disk]);
-        
+
         // Save prompt + workflow in metadata field
         $metadataContent = "--- ComfyUI Metadata ---\n";
         if (isset($comfyuiData['prompt'])) {
@@ -294,7 +270,7 @@ class MetaDataService
     {
         $disk = config('filesystems.default');
         Log::info('parseComfyUIPromptToFields started', ['album_id' => $album->id, 'disk' => $disk, 'node_count' => count($promptData)]);
-        
+
         // First pass: find KSampler node and get positive/negative references
         $positiveNodeId = null;
         $negativeNodeId = null;
@@ -304,7 +280,7 @@ class MetaDataService
         foreach ($promptData as $nodeId => $nodeData) {
             if (isset($nodeData['class_type']) && $nodeData['class_type'] === 'KSampler') {
                 Log::info('Found KSampler node', ['album_id' => $album->id, 'disk' => $disk, 'node_id' => $nodeId]);
-                
+
                 $inputs = $nodeData['inputs'];
 
                 // Extract sampling parameters
@@ -436,7 +412,7 @@ class MetaDataService
             Log::info('Setting LoRAs', ['album_id' => $album->id, 'disk' => $disk, 'lora_count' => count($loraNames)]);
             $album->loras = implode(', ', $loraNames);
         }
-        
+
         Log::info('parseComfyUIPromptToFields completed', ['album_id' => $album->id, 'disk' => $disk]);
     }
 }

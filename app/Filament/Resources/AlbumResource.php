@@ -46,14 +46,9 @@ class AlbumResource extends Resource
                         $isS3 = config('filesystems.default') === 's3';
                         $uploadFolder = $isS3 ? config('filesystems.disks.s3.upload_folder', 'sd_develop') : '';
 
-                        if ($record) {
-                            return $isS3
-                                ? "{$uploadFolder}/albums/{$record->id}"
-                                : "albums/{$record->id}";
-                        }
                         return $isS3
-                            ? "{$uploadFolder}/albums/temp"
-                            : "albums/temp";
+                            ? "{$uploadFolder}/albums"
+                            : "albums";
                     })
                     ->when(config('filesystems.default') === 's3', fn($component) => $component->visibility('public'))
                     ->formatStateUsing(function ($state) {
@@ -138,12 +133,11 @@ class AlbumResource extends Resource
                             }
                         }
 
-                        // If this looks like an album file (albums/{id}/filename), route to our decrypt controller
+                        // If this looks like an album file (albums/filename), route to our decrypt controller
                         $segments = explode('/', $normalized);
-                        if (isset($segments[0]) && $segments[0] === 'albums' && isset($segments[1]) && is_numeric($segments[1])) {
-                            $albumId = $segments[1];
+                        if (isset($segments[0]) && $segments[0] === 'albums') {
                             $filename = basename($file);
-                            $url = url("/albums/{$albumId}/image/{$filename}");
+                            $url = url("/albums/image/{$filename}");
                         }
 
                         // Fallback to storage URL if we couldn't build decrypt route

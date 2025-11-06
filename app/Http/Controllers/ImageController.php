@@ -16,38 +16,38 @@ class ImageController extends Controller
      * Note: thumbnails remain public on the bucket for fast display. Full images
      * are stored encrypted and must be routed through this controller.
      */
-    public function showImage($albumId, $filename)
+    public function showImage($filename)
     {
-        Log::info('showImage request', ['album_id' => $albumId, 'filename' => $filename]);
+        Log::info('showImage request', ['filename' => $filename]);
 
         $disk = config('filesystems.default');
 
         // Build the path depending on disk type. For S3 the upload_folder prefix may be used.
         if ($disk === 's3') {
             $uploadFolder = config('filesystems.disks.s3.upload_folder', 'sd_develop');
-            $path = "{$uploadFolder}/albums/{$albumId}/{$filename}";
+            $path = "{$uploadFolder}/albums/{$filename}";
         } else {
-            $path = "albums/{$albumId}/{$filename}";
+            $path = "albums/{$filename}";
         }
 
-        Log::debug('Image path', ['album_id' => $albumId, 'disk' => $disk, 'path' => $path]);
+        Log::debug('Image path', ['disk' => $disk, 'path' => $path]);
 
         if (!Storage::disk($disk)->exists($path)) {
-            Log::warn('Image not found', ['album_id' => $albumId, 'disk' => $disk, 'filename' => $filename, 'path' => $path]);
+            Log::warning('Image not found', ['disk' => $disk, 'filename' => $filename, 'path' => $path]);
             abort(404);
         }
 
-        Log::debug('Image found, reading contents', ['album_id' => $albumId, 'disk' => $disk, 'filename' => $filename]);
+        Log::debug('Image found, reading contents', ['disk' => $disk, 'filename' => $filename]);
         $contents = Storage::disk($disk)->get($path);
 
         $decrypted = $contents;
         if (ImageService::isEncryptedDisk($disk)) {
-            Log::debug('Disk is encrypted, attempting to decrypt', ['album_id' => $albumId, 'disk' => $disk, 'filename' => $filename]);
+            Log::debug('Disk is encrypted, attempting to decrypt', ['disk' => $disk, 'filename' => $filename]);
             try {
                 $decrypted = base64_decode(Crypt::decryptString($contents));
-                Log::debug('Image decrypted successfully', ['album_id' => $albumId, 'disk' => $disk, 'filename' => $filename]);
+                Log::debug('Image decrypted successfully', ['disk' => $disk, 'filename' => $filename]);
             } catch (\Exception $e) {
-                Log::error('Decryption failed for image', ['album_id' => $albumId, 'disk' => $disk, 'filename' => $filename, 'error' => $e->getMessage()]);
+                Log::error('Decryption failed for image', ['disk' => $disk, 'filename' => $filename, 'error' => $e->getMessage()]);
                 abort(404);
             }
         }
@@ -56,7 +56,7 @@ class ImageController extends Controller
         $mime = finfo_buffer($finfo, $decrypted, FILEINFO_MIME_TYPE);
         finfo_close($finfo);
 
-        Log::info('Streaming image', ['album_id' => $albumId, 'disk' => $disk, 'filename' => $filename, 'mime_type' => $mime]);
+        Log::info('Streaming image', ['disk' => $disk, 'filename' => $filename, 'mime_type' => $mime]);
 
         return response($decrypted, 200)
             ->header('Content-Type', $mime)
@@ -69,37 +69,37 @@ class ImageController extends Controller
     /**
      * Stream a decrypted thumbnail from storage (for encrypted disks).
      */
-    public function showThumbnail($albumId, $filename)
+    public function showThumbnail($filename)
     {
-        Log::info('showThumbnail request', ['album_id' => $albumId, 'filename' => $filename]);
+        Log::info('showThumbnail request', ['filename' => $filename]);
 
         $disk = config('filesystems.default');
 
         if ($disk === 's3') {
             $uploadFolder = config('filesystems.disks.s3.upload_folder', 'sd_develop');
-            $path = "{$uploadFolder}/albums/{$albumId}/thumbnails/{$filename}";
+            $path = "{$uploadFolder}/albums/thumbnails/{$filename}";
         } else {
-            $path = "albums/{$albumId}/thumbnails/{$filename}";
+            $path = "albums/thumbnails/{$filename}";
         }
 
-        Log::debug('Thumbnail path', ['album_id' => $albumId, 'disk' => $disk, 'path' => $path]);
+        Log::debug('Thumbnail path', ['disk' => $disk, 'path' => $path]);
 
         if (!Storage::disk($disk)->exists($path)) {
-            Log::warn('Thumbnail not found', ['album_id' => $albumId, 'disk' => $disk, 'filename' => $filename, 'path' => $path]);
+            Log::warning('Thumbnail not found', ['disk' => $disk, 'filename' => $filename, 'path' => $path]);
             abort(404);
         }
 
-        Log::debug('Thumbnail found, reading contents', ['album_id' => $albumId, 'disk' => $disk, 'filename' => $filename]);
+        Log::debug('Thumbnail found, reading contents', ['disk' => $disk, 'filename' => $filename]);
         $contents = Storage::disk($disk)->get($path);
 
         $decrypted = $contents;
         if (ImageService::isEncryptedDisk($disk)) {
-            Log::debug('Disk is encrypted, attempting to decrypt', ['album_id' => $albumId, 'disk' => $disk, 'filename' => $filename]);
+            Log::debug('Disk is encrypted, attempting to decrypt', ['disk' => $disk, 'filename' => $filename]);
             try {
                 $decrypted = base64_decode(Crypt::decryptString($contents));
-                Log::debug('Thumbnail decrypted successfully', ['album_id' => $albumId, 'disk' => $disk, 'filename' => $filename]);
+                Log::debug('Thumbnail decrypted successfully', ['disk' => $disk, 'filename' => $filename]);
             } catch (\Exception $e) {
-                Log::error('Decryption failed for thumbnail', ['album_id' => $albumId, 'disk' => $disk, 'filename' => $filename, 'error' => $e->getMessage()]);
+                Log::error('Decryption failed for thumbnail', ['disk' => $disk, 'filename' => $filename, 'error' => $e->getMessage()]);
                 abort(404);
             }
         }
@@ -108,7 +108,7 @@ class ImageController extends Controller
         $mime = finfo_buffer($finfo, $decrypted, FILEINFO_MIME_TYPE);
         finfo_close($finfo);
 
-        Log::info('Streaming thumbnail', ['album_id' => $albumId, 'disk' => $disk, 'filename' => $filename, 'mime_type' => $mime]);
+        Log::info('Streaming thumbnail', ['disk' => $disk, 'filename' => $filename, 'mime_type' => $mime]);
 
         return response($decrypted, 200)
             ->header('Content-Type', $mime)

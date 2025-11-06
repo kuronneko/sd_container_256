@@ -45,14 +45,12 @@ class ImageService
         return $path;
     }
 
-    //Is used because i want to save all images in a folder with the album ID
-    //In creating a new album, the images are saved in the temp folder
-    //When the album is saved, the images are moved from the temp folder to the album folder
-    //The images are also saved in the database as a JSON column
-    //When editing, new images are in temp folder and need to be moved, old images stay in place
-    public static function moveImagesFromTempFolderToIdAlbumFolder(Album $album, bool $skipEncryption = false)
+    //Is used to ensure all images in an album are properly processed and stored
+    //Images are uploaded directly to the albums folder and processed
+    //The images are stored in the database as a JSON column encrypted
+    public static function ensureImagesProcessed(Album $album, bool $skipEncryption = false)
     {
-        Log::info('moveImagesFromTempFolderToIdAlbumFolder started', ['album_id' => $album->id, 'skip_encryption' => $skipEncryption]);
+        Log::info('ensureImagesProcessed started', ['album_id' => $album->id, 'skip_encryption' => $skipEncryption]);
 
         $disk = self::getDisk();
         $uploadFolder = self::getUploadFolder();
@@ -60,113 +58,64 @@ class ImageService
 
         Log::info('Processing images', ['album_id' => $album->id, 'disk' => $disk, 'image_count' => count($images)]);
 
-        if ($disk === 's3') {
-            $newDirectory = "{$uploadFolder}/albums/{$album->id}";
-            $tempDirectory = "{$uploadFolder}/albums/temp";
-        } else {
-            $newDirectory = "albums/{$album->id}";
-            $tempDirectory = "albums/temp";
-        }
+        $albumsDirectory = $disk === 's3' ? "{$uploadFolder}/albums" : "albums";
+        $thumbnailDirectory = "{$albumsDirectory}/thumbnails";
 
-        Log::debug('Directory paths', ['album_id' => $album->id, 'disk' => $disk, 'new_directory' => $newDirectory, 'temp_directory' => $tempDirectory]);
+        Log::debug('Directory paths', ['album_id' => $album->id, 'disk' => $disk, 'albums_directory' => $albumsDirectory, 'thumbnail_directory' => $thumbnailDirectory]);
 
         // Process each image
         foreach ($images as &$image) {
             $fileName = basename($image);
-            $tempPath = "{$tempDirectory}/{$fileName}";
-            $newPath = "{$newDirectory}/{$fileName}";
+            $imagePath = "{$albumsDirectory}/{$fileName}";
+            $thumbnailPath = "{$thumbnailDirectory}/{$fileName}";
 
-            Log::debug('Processing image', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName, 'temp_path' => $tempPath, 'new_path' => $newPath]);
+            Log::debug('Processing image', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName, 'image_path' => $imagePath]);
 
-            // Check if image is in temp folder (new upload)
-            if (Storage::disk($disk)->exists($tempPath)) {
-                Log::info('Found image in temp folder', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
+            // Check if image exists in albums folder
+            if (Storage::disk($disk)->exists($imagePath)) {
+                Log::info('Image already in albums folder', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName, 'path' => $imagePath]);
 
-                if (self::isEncryptedDisk($disk)) {
-                    Log::debug('Disk is encrypted', ['album_id' => $album->id, 'disk' => $disk]);
-
-                    // If requested to skip encryption, just move the object as-is.
-                    if ($skipEncryption) {
-                        try {
-                            Log::info('Skipping encryption, moving file', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
-                            Storage::disk($disk)->move($tempPath, $newPath);
-                            self::generateThumbnail($newDirectory, $newPath);
-                        } catch (\Exception $e) {
-                            Log::error('Error moving image to ' . $newPath . ': ' . $e->getMessage(), ['album_id' => $album->id, 'disk' => $disk]);
-                        }
-                    } else {
-                        // Read the uploaded (plain) content, encrypt and store into new path
-                        try {
-                            Log::info('Encrypting and moving image', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
-                            $contents = Storage::disk($disk)->get($tempPath);
-                            // Encrypt with base64 wrapper to keep binary safe
-                            $encrypted = Crypt::encryptString(base64_encode($contents));
-                            Storage::disk($disk)->put($newPath, $encrypted, ['visibility' => 'public']);
-                            Log::info('Image encrypted and saved', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName, 'new_path' => $newPath]);
-
-                            // Delete the temp (plain) object
-                            Storage::disk($disk)->delete($tempPath);
-                            Log::info('Temp image deleted', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
-
-                            // Generate thumbnail from decrypted content
-                            Log::info('Generating thumbnail', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
-                            self::generateThumbnail($newDirectory, $newPath);
-                        } catch (\Exception $e) {
-                            Log::error('Error encrypting/moving image to ' . $newPath . ': ' . $e->getMessage(), ['album_id' => $album->id, 'disk' => $disk]);
-                        }
-                    }
-                } else {
-                    // Local/non-encrypted disk: just move
-                    Log::info('Moving image (non-encrypted disk)', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
-                    Storage::disk($disk)->move($tempPath, $newPath);
-                    // Generate thumbnail for newly moved image
-                    Log::info('Generating thumbnail', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
-                    self::generateThumbnail($newDirectory, $newPath);
-                }
-            } else if (Storage::disk($disk)->exists($newPath)) {
-                Log::info('Image already in album folder', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName, 'path' => $newPath]);
-
-                // Image already in album folder. Ensure it's encrypted on encrypted disks if needed, then check thumbnail.
+                // Image already in albums folder. Ensure it's encrypted on encrypted disks if needed, then check thumbnail.
                 if (self::isEncryptedDisk($disk)) {
                     try {
-                        $existing = Storage::disk($disk)->get($newPath);
+                        $existing = Storage::disk($disk)->get($imagePath);
                         // If decrypting succeeds it's already encrypted; if it throws, assume plaintext and encrypt in-place
                         try {
                             Crypt::decryptString($existing);
                             Log::debug('Image already encrypted', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
                             // already encrypted
                         } catch (\Exception $e) {
-                            // plaintext object found in album folder — encrypt it in place
-                            Log::warn('Plaintext image found in album folder, encrypting in place', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
+                            // plaintext object found in albums folder — encrypt it in place
+                            Log::warning('Plaintext image found in albums folder, encrypting in place', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
                             try {
                                 $encrypted = Crypt::encryptString(base64_encode($existing));
-                                Storage::disk($disk)->put($newPath, $encrypted, ['visibility' => 'public']);
+                                Storage::disk($disk)->put($imagePath, $encrypted, ['visibility' => 'public']);
                                 Log::info('Image encrypted in place', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
                             } catch (\Exception $e2) {
-                                Log::error('Error encrypting in-place ' . $newPath . ': ' . $e2->getMessage(), ['album_id' => $album->id, 'disk' => $disk]);
+                                Log::error('Error encrypting in-place ' . $imagePath . ': ' . $e2->getMessage(), ['album_id' => $album->id, 'disk' => $disk]);
                             }
                         }
                     } catch (\Exception $e) {
-                        Log::error('Error reading existing file ' . $newPath . ': ' . $e->getMessage(), ['album_id' => $album->id, 'disk' => $disk]);
+                        Log::error('Error reading existing file ' . $imagePath . ': ' . $e->getMessage(), ['album_id' => $album->id, 'disk' => $disk]);
                     }
                 }
 
                 // Generate thumbnail (generateThumbnail will attempt to decrypt if needed)
                 Log::info('Generating thumbnail for existing image', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
-                self::generateThumbnail($newDirectory, $newPath);
+                self::generateThumbnail($albumsDirectory, $imagePath);
             } else {
-                Log::warn('Image not found in temp or album folder', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName, 'temp_path' => $tempPath, 'new_path' => $newPath]);
+                Log::warning('Image not found in albums folder', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName, 'image_path' => $imagePath]);
             }
 
             // Update the image path - normalize by removing upload folder prefix
-            $image = self::normalizePath($newPath, $disk);
+            $image = self::normalizePath($imagePath, $disk);
             Log::debug('Image path updated', ['album_id' => $album->id, 'disk' => $disk, 'new_image_path' => $image]);
         }
 
         // Save the updated paths back to the JSON column
         $album->images = $images;
         $album->save();
-        Log::info('moveImagesFromTempFolderToIdAlbumFolder completed', ['album_id' => $album->id, 'disk' => $disk]);
+        Log::info('ensureImagesProcessed completed', ['album_id' => $album->id, 'disk' => $disk]);
     }
 
     public static function generateThumbnail($mainNewDirectory, $mainImageUrl, bool $force = false)

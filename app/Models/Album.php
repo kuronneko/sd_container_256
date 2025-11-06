@@ -125,24 +125,24 @@ class Album extends Model
         // can decrypt on-the-fly. This covers 's3' and any other disk listed in
         // image_encrypt.encrypted_disks (for example 'public').
         if (ImageService::isEncryptedDisk($disk)) {
-            $this->selected_thumbnail_url = url("/albums/{$this->id}/thumbnail/{$filename}");
-            $this->selected_image_url = url("/albums/{$this->id}/image/{$filename}");
+            $this->selected_thumbnail_url = url("/albums/thumbnail/{$filename}");
+            $this->selected_image_url = url("/albums/image/{$filename}");
         } else if ($disk === 's3') {
             // Unencrypted S3: point thumbnails to the CDN for speed and full image to controller
             $bucket = config('filesystems.disks.s3.bucket');
             $region = config('filesystems.disks.s3.region');
             $cdnUrl = "https://{$bucket}.{$region}.cdn.digitaloceanspaces.com";
-            $this->selected_thumbnail_url = "{$cdnUrl}/{$uploadFolder}/albums/{$this->id}/thumbnails/{$filename}";
-            $this->selected_image_url = url("/albums/{$this->id}/image/{$filename}");
+            $this->selected_thumbnail_url = "{$cdnUrl}/{$uploadFolder}/albums/thumbnails/{$filename}";
+            $this->selected_image_url = url("/albums/image/{$filename}");
         } else {
             // Local disk: if the disk exposes a URL, use it; otherwise build a storage URL.
             $diskUrl = config("filesystems.disks.{$disk}.url");
             if ($diskUrl) {
-                $this->selected_thumbnail_url = rtrim($diskUrl, '/') . "/albums/{$this->id}/thumbnails/{$filename}";
-                $this->selected_image_url = rtrim($diskUrl, '/') . "/albums/{$this->id}/{$filename}";
+                $this->selected_thumbnail_url = rtrim($diskUrl, '/') . "/albums/thumbnails/{$filename}";
+                $this->selected_image_url = rtrim($diskUrl, '/') . "/albums/{$filename}";
             } else {
-                $this->selected_thumbnail_url = url('/storage/app/private/albums/' . $this->id . '/thumbnails/' . $filename);
-                $this->selected_image_url = url('/storage/app/private/albums/' . $this->id . '/' . $filename);
+                $this->selected_thumbnail_url = url('/storage/app/private/albums/thumbnails/' . $filename);
+                $this->selected_image_url = url('/storage/app/private/albums/' . $filename);
             }
         }
     }

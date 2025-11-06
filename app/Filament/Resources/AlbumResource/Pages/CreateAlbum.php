@@ -17,10 +17,10 @@ class CreateAlbum extends CreateRecord
     $disk = config('filesystems.default');
     Log::info('Album creation started', ['album_id' => $this->record->id, 'image_count' => count($this->record->images ?? []), 'disk' => $disk]);
 
-        // First move images from temp folder and ensure they are encrypted on S3
-        Log::info('Starting to move images from temp folder', ['album_id' => $this->record->id, 'disk' => $disk]);
-        ImageService::moveImagesFromTempFolderToIdAlbumFolder($this->record);
-        Log::info('Images moved from temp folder', ['album_id' => $this->record->id, 'disk' => $disk]);
+        // First ensure images are properly processed and encrypted on encrypted disks
+        Log::info('Starting image processing', ['album_id' => $this->record->id, 'disk' => $disk]);
+        ImageService::ensureImagesProcessed($this->record);
+        Log::info('Images processed', ['album_id' => $this->record->id, 'disk' => $disk]);
 
         // Then extract metadata and update metadata field
         Log::info('Starting metadata extraction', ['album_id' => $this->record->id, 'disk' => $disk]);
