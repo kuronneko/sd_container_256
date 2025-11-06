@@ -372,7 +372,7 @@ class AlbumResource extends Resource
             ->filters([
                 Filter::make('positive')
                     ->form([
-                        Forms\Components\TextInput::make('positive')->label('Positive contains'),
+                        Forms\Components\TextInput::make('positive')->label('Positive contains')->disabled()->placeholder('(Under development)'),
                     ])
                     ->query(function (Builder $query, array $data) {
                         if (empty($data['positive'])) {
@@ -384,7 +384,7 @@ class AlbumResource extends Resource
 
                 Filter::make('negative')
                     ->form([
-                        Forms\Components\TextInput::make('negative')->label('Negative contains'),
+                        Forms\Components\TextInput::make('negative')->label('Negative contains')->disabled()->placeholder('(Under development)'),
                     ])
                     ->query(function (Builder $query, array $data) {
                         if (empty($data['negative'])) {

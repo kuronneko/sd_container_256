@@ -45,7 +45,8 @@ class AlbumOverview extends Widget implements HasForms
                 ->schema([
                     Forms\Components\TextInput::make('search')
                         ->label('Search')
-                        ->placeholder('Search positive, negative, seed or model name (ckpt_name)')
+                        ->disabled()
+                        ->placeholder('(Under development) Search positive, negative, seed or model name (ckpt_name)')
                         ->columnSpan(2),
                 ]),
         ];
