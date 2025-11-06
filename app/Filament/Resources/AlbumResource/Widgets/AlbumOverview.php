@@ -21,7 +21,7 @@ class AlbumOverview extends Widget implements HasForms
     public $startDate;
     public $endDate;
     public ?string $search = null;
-    public int $perPage = 100;
+    public int $perPage = 10;
     public int $page = 1;
     public bool $hasMore = true;
 
