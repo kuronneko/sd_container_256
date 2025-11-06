@@ -158,7 +158,10 @@ class AlbumResource extends Resource
                                 $realPath = method_exists($file, 'getRealPath') ? $file->getRealPath() : ($file->getPath() ?? null);
                                 $contents = $realPath ? file_get_contents($realPath) : $file->get();
 
-                                // Extract metadata from plaintext image and store in session
+                                // Extract metadata from plaintext image before encryption
+                                // Store metadata in session for processing during album create/update
+                                // In create mode: captures metadata from all uploaded images (first will be used)
+                                // In edit mode: captures metadata from newly uploaded/modified images for update
                                 $metadata = MetaDataService::extractMetadataFromContent($contents);
                                 if ($metadata) {
                                     session()->put("image_metadata_{$fileName}", $metadata);
