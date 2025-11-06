@@ -53,7 +53,7 @@ class ImageService
     public static function moveImagesFromTempFolderToIdAlbumFolder(Album $album, bool $skipEncryption = false)
     {
         Log::info('moveImagesFromTempFolderToIdAlbumFolder started', ['album_id' => $album->id, 'skip_encryption' => $skipEncryption]);
-        
+
         $disk = self::getDisk();
         $uploadFolder = self::getUploadFolder();
         $images = $album->images;
@@ -81,10 +81,10 @@ class ImageService
             // Check if image is in temp folder (new upload)
             if (Storage::disk($disk)->exists($tempPath)) {
                 Log::info('Found image in temp folder', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
-                
+
                 if (self::isEncryptedDisk($disk)) {
                     Log::debug('Disk is encrypted', ['album_id' => $album->id, 'disk' => $disk]);
-                    
+
                     // If requested to skip encryption, just move the object as-is.
                     if ($skipEncryption) {
                         try {
@@ -103,11 +103,11 @@ class ImageService
                             $encrypted = Crypt::encryptString(base64_encode($contents));
                             Storage::disk($disk)->put($newPath, $encrypted, ['visibility' => 'public']);
                             Log::info('Image encrypted and saved', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName, 'new_path' => $newPath]);
-                            
+
                             // Delete the temp (plain) object
                             Storage::disk($disk)->delete($tempPath);
                             Log::info('Temp image deleted', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
-                            
+
                             // Generate thumbnail from decrypted content
                             Log::info('Generating thumbnail', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
                             self::generateThumbnail($newDirectory, $newPath);
@@ -125,7 +125,7 @@ class ImageService
                 }
             } else if (Storage::disk($disk)->exists($newPath)) {
                 Log::info('Image already in album folder', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName, 'path' => $newPath]);
-                
+
                 // Image already in album folder. Ensure it's encrypted on encrypted disks if needed, then check thumbnail.
                 if (self::isEncryptedDisk($disk)) {
                     try {
@@ -172,7 +172,7 @@ class ImageService
     public static function generateThumbnail($mainNewDirectory, $mainImageUrl, bool $force = false)
     {
         Log::info('generateThumbnail started', ['image_url' => $mainImageUrl, 'force' => $force]);
-        
+
         $disk = self::getDisk();
         $thumbnailDirectory = "{$mainNewDirectory}/thumbnails";
         $thumbnailFileName = basename($mainImageUrl);
@@ -226,7 +226,7 @@ class ImageService
                 );
                 Log::info('Thumbnail saved', ['disk' => $disk, 'thumbnail_path' => $thumbnailPath]);
             }
-            
+
             Log::info('generateThumbnail completed', ['disk' => $disk, 'thumbnail_path' => $thumbnailPath]);
         } catch (\Exception $e) {
             Log::error('Error generating thumbnail for ' . $mainImageUrl . ': ' . $e->getMessage(), ['disk' => $disk]);
@@ -238,7 +238,7 @@ class ImageService
     public static function deleteAllImagesWhoAreNotInJsonFromStorage(Album $album)
     {
         Log::info('deleteAllImagesWhoAreNotInJsonFromStorage started', ['album_id' => $album->id]);
-        
+
         $disk = self::getDisk();
         $uploadFolder = self::getUploadFolder();
         $images = array_map(function ($image) {
@@ -293,7 +293,7 @@ class ImageService
                 Log::error('Error deleting thumbnail ' . $thumbnail . ': ' . $e->getMessage(), ['album_id' => $album->id, 'disk' => $disk]);
             }
         }
-        
+
         Log::info('deleteAllImagesWhoAreNotInJsonFromStorage completed', ['album_id' => $album->id, 'disk' => $disk]);
     }
 
