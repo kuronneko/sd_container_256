@@ -46,10 +46,13 @@ class MetaDataService
     /**
      * Update metadata from images for existing album
      * Metadata is extracted during upload and stored in session
+     *
+     * @param Album $album
+     * @param bool $forceRefresh Force re-extraction of metadata from storage if not in session
      */
-    public static function updateMetadataFromImages(Album $album): void
+    public static function updateMetadataFromImages(Album $album, bool $forceRefresh = false): void
     {
-        Log::info('updateMetadataFromImages started', ['album_id' => $album->id, 'image_count' => count($album->images ?? [])]);
+        Log::info('updateMetadataFromImages started', ['album_id' => $album->id, 'image_count' => count($album->images ?? []), 'force_refresh' => $forceRefresh]);
 
         $images = $album->images ?? [];
 
@@ -58,22 +61,105 @@ class MetaDataService
             return;
         }
 
-        // Check session for metadata from the first image (extracted during upload)
+        $metadataFound = false;
+        $disk = config('filesystems.default');
+
+        // Check session for metadata from any image (extracted during upload)
         foreach ($images as $image) {
             $fileName = basename($image);
             $sessionKey = "image_metadata_{$fileName}";
             $comfyuiData = session()->get($sessionKey);
 
             if ($comfyuiData) {
-                Log::info('Found metadata in session for first image', ['album_id' => $album->id, 'file_name' => $fileName]);
+                Log::info('Found metadata in session for image', ['album_id' => $album->id, 'file_name' => $fileName]);
                 self::saveComfyUIMetadata($album, $comfyuiData);
                 session()->forget($sessionKey);
-                Log::info('Metadata updated', ['album_id' => $album->id, 'file_name' => $fileName]);
-                return; // Only use first image's metadata
+                Log::info('Metadata updated from session', ['album_id' => $album->id, 'file_name' => $fileName]);
+                $metadataFound = true;
+                break; // Only use first image's metadata
             }
         }
 
-        Log::info('updateMetadataFromImages completed (no metadata found)', ['album_id' => $album->id]);
+        // If force refresh enabled and no session metadata found, try to extract from storage
+        if (!$metadataFound && $forceRefresh) {
+            Log::info('No session metadata found, attempting to extract from storage', ['album_id' => $album->id, 'disk' => $disk, 'image_count' => count($images)]);
+
+            try {
+                foreach ($images as $index => $image) {
+                    $fileName = basename($image);
+                    Log::debug('Attempting to extract metadata from image', ['album_id' => $album->id, 'image_index' => $index, 'file_name' => $fileName]);
+
+                    $normalizedPath = self::getNormalizedImagePath($image);
+                    Log::debug('Normalized image path', ['album_id' => $album->id, 'original' => $image, 'normalized' => $normalizedPath]);
+
+                    try {
+                        $encryptedContent = Storage::disk($disk)->get($normalizedPath);
+                        Log::debug('Retrieved encrypted content from storage', ['album_id' => $album->id, 'file_name' => $fileName, 'size' => strlen($encryptedContent)]);
+
+                        if (ImageService::isEncryptedDisk($disk)) {
+                            Log::debug('Decrypting image content', ['album_id' => $album->id, 'file_name' => $fileName]);
+                            try {
+                                $contents = Crypt::decryptString($encryptedContent);
+                                Log::debug('Successfully decrypted image', ['album_id' => $album->id, 'file_name' => $fileName, 'decrypted_size' => strlen($contents)]);
+                            } catch (\Exception $decryptError) {
+                                Log::warning('Failed to decrypt image', ['album_id' => $album->id, 'file_name' => $fileName, 'error' => $decryptError->getMessage()]);
+                                continue;
+                            }
+                        } else {
+                            Log::debug('Using unencrypted content', ['album_id' => $album->id, 'file_name' => $fileName]);
+                            $contents = $encryptedContent;
+                        }
+
+                        Log::debug('Extracting metadata from decrypted/raw content', ['album_id' => $album->id, 'file_name' => $fileName, 'content_size' => strlen($contents)]);
+                        $comfyuiData = self::extractMetadataFromContent($contents);
+
+                        if ($comfyuiData) {
+                            Log::info('Metadata extracted from storage', ['album_id' => $album->id, 'file_name' => $fileName, 'keys' => array_keys($comfyuiData)]);
+                            self::saveComfyUIMetadata($album, $comfyuiData);
+                            $metadataFound = true;
+                            break; // Use first image with valid metadata
+                        } else {
+                            Log::info('Image has no embedded metadata - may not be a ComfyUI-generated image', [
+                                'album_id' => $album->id,
+                                'file_name' => $fileName,
+                                'decrypted_size' => strlen($contents),
+                                'suggestion' => 'Re-export image from ComfyUI with metadata embedding enabled'
+                            ]);
+                        }
+                    } catch (\Exception $e) {
+                        Log::warning('Error processing image for metadata', ['album_id' => $album->id, 'file_name' => $fileName, 'error' => $e->getMessage()]);
+                        continue;
+                    }
+                }
+            } catch (\Exception $e) {
+                Log::warning('Force refresh metadata extraction failed', ['album_id' => $album->id, 'error' => $e->getMessage()]);
+            }
+        }
+
+        if (!$metadataFound) {
+            Log::info('updateMetadataFromImages completed (no metadata found)', ['album_id' => $album->id]);
+        } else {
+            Log::info('updateMetadataFromImages completed', ['album_id' => $album->id]);
+        }
+    }
+
+    /**
+     * Normalize image path for storage access
+     * Handles S3 upload folder prefix
+     */
+    protected static function getNormalizedImagePath(string $imagePath): string
+    {
+        $disk = config('filesystems.default');
+
+        if ($disk === 's3') {
+            $uploadFolder = config('filesystems.disks.s3.upload_folder', 'sd_develop');
+            // If path doesn't have the upload folder prefix, add it
+            if (strpos($imagePath, $uploadFolder . '/') !== 0) {
+                return "{$uploadFolder}/{$imagePath}";
+            }
+        }
+
+        return $imagePath;
     }
 
     /**
@@ -85,13 +171,26 @@ class MetaDataService
      */
     public static function extractMetadataFromContent($imageContent)
     {
-        Log::info('extractMetadataFromContent started');
+        Log::info('extractMetadataFromContent started', ['content_size' => strlen($imageContent) ?? 0]);
 
         try {
             if (empty($imageContent)) {
                 Log::warning('Empty image content provided for metadata extraction');
                 return null;
             }
+
+            // Verify PNG signature
+            $pngSignature = substr($imageContent, 0, 8);
+            $expectedSignature = "\x89PNG\r\n\x1a\n";
+            if ($pngSignature !== $expectedSignature) {
+                Log::warning('Invalid PNG signature detected', [
+                    'expected' => bin2hex($expectedSignature),
+                    'received' => bin2hex($pngSignature)
+                ]);
+                return null;
+            }
+
+            Log::debug('Valid PNG signature detected, extracting metadata');
 
             // Use an in-memory stream to avoid writing to disk
             Log::debug('Opening memory stream for PNG metadata extraction');
@@ -111,7 +210,7 @@ class MetaDataService
             if (!empty($comfyuiData)) {
                 Log::info('ComfyUI data extracted successfully from content', ['data_keys' => array_keys($comfyuiData)]);
             } else {
-                Log::debug('No ComfyUI data found in image content');
+                Log::debug('No ComfyUI data found in image content', ['content_size' => strlen($imageContent)]);
             }
 
             return !empty($comfyuiData) ? $comfyuiData : null;
@@ -135,6 +234,8 @@ class MetaDataService
     protected static function extractPNGMetadata($source): array
     {
         $comfyuiData = [];
+        $chunkCount = 0;
+        $textChunkCount = 0;
 
         try {
             // Read PNG file and extract text chunks
@@ -152,27 +253,42 @@ class MetaDataService
             fseek($handle, 8);
 
             while (!feof($handle)) {
-                $chunkLength = unpack('N', fread($handle, 4))[1] ?? 0;
+                $lengthData = fread($handle, 4);
+                if (strlen($lengthData) < 4) break; // EOF reached
+
+                $chunkLength = unpack('N', $lengthData)[1] ?? 0;
                 $chunkType = fread($handle, 4);
+                $chunkCount++;
+
+                Log::debug('Processing PNG chunk', ['chunk_number' => $chunkCount, 'type' => $chunkType, 'length' => $chunkLength]);
 
                 if ($chunkType === 'tEXt') {
+                    $textChunkCount++;
                     $chunkData = fread($handle, $chunkLength);
                     $nullPos = strpos($chunkData, "\0");
+
                     if ($nullPos !== false) {
                         $keyword = substr($chunkData, 0, $nullPos);
                         $text = substr($chunkData, $nullPos + 1);
+
+                        Log::debug('Found tEXt chunk', ['keyword' => $keyword, 'text_length' => strlen($text)]);
 
                         // Check for ComfyUI metadata keywords
                         if ($keyword === 'prompt' || $keyword === 'workflow') {
                             $jsonData = json_decode($text, true);
                             if (json_last_error() === JSON_ERROR_NONE && is_array($jsonData)) {
+                                Log::info('Successfully parsed ComfyUI ' . $keyword, ['node_count' => count($jsonData)]);
                                 $comfyuiData[$keyword] = $jsonData;
+                            } else {
+                                Log::warning('Failed to parse ' . $keyword . ' JSON', ['error' => json_last_error_msg()]);
                             }
                         }
                     }
                 } else {
                     // Skip chunk data
-                    fseek($handle, $chunkLength, SEEK_CUR);
+                    if ($chunkLength > 0) {
+                        fseek($handle, $chunkLength, SEEK_CUR);
+                    }
                 }
 
                 // Skip CRC
@@ -181,8 +297,23 @@ class MetaDataService
                 if ($chunkType === 'IEND') break;
             }
 
+            Log::debug('PNG metadata extraction complete', [
+                'total_chunks' => $chunkCount,
+                'text_chunks' => $textChunkCount,
+                'metadata_found' => !empty($comfyuiData),
+                'has_ihdr' => strpos(implode(',', array_column([], 0)), 'IHDR') !== false
+            ]);
+
             if ($openedHere) {
                 fclose($handle);
+            }
+
+            // Log specific warning if no tEXt chunks found (image without metadata)
+            if ($textChunkCount === 0 && !empty($comfyuiData) === false) {
+                Log::info('PNG image found but contains no text metadata chunks - image may not have been created with ComfyUI or metadata was stripped', [
+                    'total_chunks' => $chunkCount,
+                    'file_size_bytes' => strlen($GLOBALS['_png_content'] ?? 'unknown')
+                ]);
             }
         } catch (\Exception $e) {
             Log::error('Error reading PNG metadata: ' . $e->getMessage());
@@ -268,16 +399,17 @@ class MetaDataService
                     $album->denoise = $inputs['denoise'];
                 }
 
-                // Get positive/negative node references
-                if (isset($inputs['positive']) && is_array($inputs['positive'])) {
-                    $positiveNodeId = $inputs['positive'][0]; // First element is node ID
-                    Log::debug('Positive node reference', ['album_id' => $album->id, 'disk' => $disk, 'node_id' => $positiveNodeId]);
+                // Get positive/negative node references - array format: [nodeId, outputIndex]
+                if (isset($inputs['positive']) && is_array($inputs['positive']) && count($inputs['positive']) > 0) {
+                    $positiveNodeId = (string) $inputs['positive'][0]; // Convert to string for comparison
+                    Log::debug('Positive node reference found', ['album_id' => $album->id, 'disk' => $disk, 'node_id' => $positiveNodeId]);
                 }
-                if (isset($inputs['negative']) && is_array($inputs['negative'])) {
-                    $negativeNodeId = $inputs['negative'][0]; // First element is node ID
-                    Log::debug('Negative node reference', ['album_id' => $album->id, 'disk' => $disk, 'node_id' => $negativeNodeId]);
+                if (isset($inputs['negative']) && is_array($inputs['negative']) && count($inputs['negative']) > 0) {
+                    $negativeNodeId = (string) $inputs['negative'][0]; // Convert to string for comparison
+                    Log::debug('Negative node reference found', ['album_id' => $album->id, 'disk' => $disk, 'node_id' => $negativeNodeId]);
                 }
 
+                Log::debug('KSampler references', ['album_id' => $album->id, 'positive_node_id' => $positiveNodeId, 'negative_node_id' => $negativeNodeId]);
                 break; // Only process first KSampler found
             }
         }
@@ -347,19 +479,16 @@ class MetaDataService
                     // Map prompts using KSampler references
                     if (isset($inputs['text'])) {
                         $text = $inputs['text'];
+                        $currentNodeId = (string) $nodeId; // Ensure string comparison
 
-                        if ($nodeId == $positiveNodeId) {
-                            // This is the positive prompt
-                            if (empty($album->positive)) {
-                                Log::debug('Setting positive prompt', ['album_id' => $album->id, 'disk' => $disk, 'text_length' => strlen($text)]);
-                                $album->positive = $text;
-                            }
-                        } elseif ($nodeId == $negativeNodeId) {
-                            // This is the negative prompt
-                            if (empty($album->negative)) {
-                                Log::debug('Setting negative prompt', ['album_id' => $album->id, 'disk' => $disk, 'text_length' => strlen($text)]);
-                                $album->negative = $text;
-                            }
+                        if ($currentNodeId === $positiveNodeId) {
+                            // This is the positive prompt - always update when extracting metadata
+                            Log::debug('Updating positive prompt', ['album_id' => $album->id, 'disk' => $disk, 'node_id' => $currentNodeId, 'text_length' => strlen($text)]);
+                            $album->positive = $text;
+                        } elseif ($currentNodeId === $negativeNodeId) {
+                            // This is the negative prompt - always update when extracting metadata
+                            Log::debug('Updating negative prompt', ['album_id' => $album->id, 'disk' => $disk, 'node_id' => $currentNodeId, 'text_length' => strlen($text)]);
+                            $album->negative = $text;
                         }
                     }
                     break;
