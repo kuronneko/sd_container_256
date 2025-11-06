@@ -21,7 +21,7 @@ use App\Services\ImageService;
 use App\Services\MetaDataService;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Facades\Log;
+use Intervention\Image\Laravel\Facades\Image as InterventionImage;
 
 class AlbumResource extends Resource
 {
@@ -107,33 +107,17 @@ class AlbumResource extends Resource
                         }
 
                         $name = basename($file);
-                        $size = 0;
                         $type = null;
                         $url = null;
 
-                        try {
-                            $storage = $component->getDisk();
-                            if ($storage->exists($file)) {
-                                $size = $storage->size($file);
-                                $type = $storage->mimeType($file);
-                            }
-                        } catch (\Exception $e) {
-                            // ignore
-                        }
-
-                        // If the storage reports a non-image mime (e.g. encrypted objects show application/octet-stream),
-                        // infer the MIME type from the file extension so Filament will render an image preview.
-                        if (empty($type) || !str_starts_with($type, 'image/')) {
-                            $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
-                            $map = [
-                                'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png',
-                                'gif' => 'image/gif', 'webp' => 'image/webp', 'svg' => 'image/svg+xml',
-                                'bmp' => 'image/bmp', 'tiff' => 'image/tiff',
-                            ];
-                            if (isset($map[$ext])) {
-                                $type = $map[$ext];
-                            }
-                        }
+                        // Infer MIME type from file extension (encrypted objects don't report image/* MIME)
+                        $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+                        $mimeMap = [
+                            'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png',
+                            'gif' => 'image/gif', 'webp' => 'image/webp', 'svg' => 'image/svg+xml',
+                            'bmp' => 'image/bmp', 'tiff' => 'image/tiff',
+                        ];
+                        $type = $mimeMap[$ext] ?? 'image/jpeg';
 
                         // If this looks like an album file (albums/albumId/filename), route to our decrypt controller
                         $segments = explode('/', $normalized);
@@ -144,7 +128,7 @@ class AlbumResource extends Resource
                         }
 
                         // Fallback to storage URL if we couldn't build decrypt route
-                        if (! $url) {
+                        if (!$url) {
                             try {
                                 $url = $component->getVisibility() === 'private'
                                     ? $component->getDisk()->temporaryUrl($file, now()->addMinutes(5))
@@ -156,7 +140,7 @@ class AlbumResource extends Resource
 
                         return [
                             'name' => $storedFileNames[$file] ?? $name,
-                            'size' => $size,
+                            'size' => 0,
                             'type' => $type,
                             'url' => $url,
                         ];
@@ -168,33 +152,39 @@ class AlbumResource extends Resource
                         $fileName = $component->getUploadedFileNameForStorage($file);
                         $path = trim($directory . '/' . $fileName, '/');
 
-                        // For encrypted disks, encrypt the file BEFORE uploading to S3
-                        // This prevents any unencrypted temporary storage on S3
                         if (ImageService::isEncryptedDisk($diskName)) {
                             try {
-                                // Read file contents from the temporary upload
+                                // Read plaintext file content
                                 $realPath = method_exists($file, 'getRealPath') ? $file->getRealPath() : ($file->getPath() ?? null);
                                 $contents = $realPath ? file_get_contents($realPath) : $file->get();
 
-                                // Extract metadata from the plaintext image BEFORE encryption
-                                // Store it in a temporary session for later use during ensureImagesProcessed
+                                // Extract metadata from plaintext image and store in session
                                 $metadata = MetaDataService::extractMetadataFromContent($contents);
                                 if ($metadata) {
                                     session()->put("image_metadata_{$fileName}", $metadata);
-                                    Log::info('Image metadata extracted and stored', ['filename' => $fileName, 'has_metadata' => true]);
                                 }
 
-                                // Encrypt the contents in memory
+                                // Generate and encrypt thumbnail if configured
+                                if (config('image_encrypt.encrypt_thumbnails', false)) {
+                                    try {
+                                        $image = InterventionImage::read($contents);
+                                        $image->cover(200, 200);
+                                        $thumbnailContent = $image->toJpeg();
+                                        $encryptedThumbnail = Crypt::encryptString($thumbnailContent);
+
+                                        $uploadFolder = $diskName === 's3' ? config('filesystems.disks.s3.upload_folder', 'sd_develop') : '';
+                                        $baseThumbPath = $uploadFolder ? "{$uploadFolder}/albums/thumbnails/{$fileName}" : "albums/thumbnails/{$fileName}";
+                                        $component->getDisk()->put($baseThumbPath, $encryptedThumbnail, ['visibility' => $component->getVisibility()]);
+                                    } catch (\Exception $e) {
+                                        // Silently skip thumbnail generation on error
+                                    }
+                                }
+
+                                // Encrypt and upload image
                                 $encrypted = Crypt::encryptString($contents);
-
-                                // Upload the encrypted file directly to the configured directory
                                 $component->getDisk()->put($path, $encrypted, ['visibility' => $component->getVisibility()]);
-
-                                Log::info('Encrypted file uploaded', ['path' => $path, 'disk' => $diskName]);
-
                                 return $path;
                             } catch (\Exception $e) {
-                                logger()->error('Error encrypting and uploading file: ' . $e->getMessage());
                                 return null;
                             }
                         }
@@ -204,7 +194,6 @@ class AlbumResource extends Resource
                             $storeMethod = $component->getVisibility() === 'public' ? 'storePubliclyAs' : 'storeAs';
                             return $file->{$storeMethod}($directory, $fileName, $diskName);
                         } catch (\Throwable $e) {
-                            logger()->error('Error saving upload: ' . $e->getMessage());
                             return null;
                         }
                     })

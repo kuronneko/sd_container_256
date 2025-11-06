@@ -48,9 +48,9 @@ class ImageService
     //Is used to ensure all images in an album are properly processed and stored
     //Images are uploaded directly to the albums folder and processed
     //The images are stored in the database as a JSON column encrypted
-    public static function ensureImagesProcessed(Album $album, bool $skipEncryption = false)
+    public static function ensureImagesProcessed(Album $album)
     {
-        Log::info('ensureImagesProcessed started', ['album_id' => $album->id, 'skip_encryption' => $skipEncryption]);
+        Log::info('ensureImagesProcessed started', ['album_id' => $album->id]);
 
         $disk = self::getDisk();
         $uploadFolder = self::getUploadFolder();
@@ -101,36 +101,22 @@ class ImageService
                     } catch (\Exception $e) {
                         Log::error('Error moving image from base folder: ' . $e->getMessage(), ['album_id' => $album->id, 'disk' => $disk]);
                     }
-                }
 
-                // Ensure it's encrypted on encrypted disks if needed
-                if (self::isEncryptedDisk($disk)) {
-                    try {
-                        $existing = Storage::disk($disk)->get($imagePath);
-                        // If decrypting succeeds it's already encrypted; if it throws, assume plaintext and encrypt in-place
+                    // Also move thumbnail if it exists in base folder
+                    $baseThumbnailPath = $disk === 's3' ? "{$uploadFolder}/albums/thumbnails/{$fileName}" : "albums/thumbnails/{$fileName}";
+                    if (Storage::disk($disk)->exists($baseThumbnailPath)) {
+                        Log::info('Moving thumbnail from base folder to album-specific folder', ['album_id' => $album->id, 'disk' => $disk, 'from' => $baseThumbnailPath, 'to' => $thumbnailPath]);
                         try {
-                            Crypt::decryptString($existing);
-                            Log::debug('Image already encrypted', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
-                            // already encrypted, nothing to do
+                            $thumbContent = Storage::disk($disk)->get($baseThumbnailPath);
+                            Storage::disk($disk)->put($thumbnailPath, $thumbContent, ['visibility' => 'public']);
+                            Storage::disk($disk)->delete($baseThumbnailPath);
+                            Log::info('Thumbnail moved successfully', ['album_id' => $album->id, 'disk' => $disk]);
                         } catch (\Exception $e) {
-                            // plaintext object found — encrypt it in place (shouldn't happen with new upload flow)
-                            Log::warning('Plaintext image found, encrypting in place', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName, 'path' => $imagePath]);
-                            try {
-                                $encrypted = Crypt::encryptString($existing);
-                                Storage::disk($disk)->put($imagePath, $encrypted, ['visibility' => 'public']);
-                                Log::info('Image encrypted in place', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
-                            } catch (\Exception $e2) {
-                                Log::error('Error encrypting in-place ' . $imagePath . ': ' . $e2->getMessage(), ['album_id' => $album->id, 'disk' => $disk]);
-                            }
+                            Log::error('Error moving thumbnail from base folder: ' . $e->getMessage(), ['album_id' => $album->id, 'disk' => $disk]);
                         }
-                    } catch (\Exception $e) {
-                        Log::error('Error reading existing file ' . $imagePath . ': ' . $e->getMessage(), ['album_id' => $album->id, 'disk' => $disk]);
                     }
                 }
 
-                // Generate thumbnail (generateThumbnail will attempt to decrypt if needed)
-                Log::info('Generating thumbnail for image', ['album_id' => $album->id, 'disk' => $disk, 'file_name' => $fileName]);
-                self::generateThumbnail($albumSpecificDirectory, $imagePath);
             }
 
             // Update the image path - normalize by removing upload folder prefix and use album-specific path
@@ -142,99 +128,7 @@ class ImageService
         $album->images = $images;
         $album->save();
 
-        // Apply any metadata that was extracted during upload (stored in session)
-        Log::info('Checking for extracted metadata in session', ['album_id' => $album->id]);
-        $metadataApplied = false;
-        foreach ($images as $image) {
-            $fileName = basename($image);
-            $sessionKey = "image_metadata_{$fileName}";
-            $extractedMetadata = session()->get($sessionKey);
-
-            if ($extractedMetadata) {
-                Log::info('Found extracted metadata for image in session', ['album_id' => $album->id, 'file_name' => $fileName, 'metadata_keys' => array_keys($extractedMetadata)]);
-
-                // Apply the metadata to the album
-                if (!empty($extractedMetadata['positive'])) {
-                    $album->positive = $extractedMetadata['positive'];
-                }
-                if (!empty($extractedMetadata['negative'])) {
-                    $album->negative = $extractedMetadata['negative'];
-                }
-                if (!empty($extractedMetadata['metadata'])) {
-                    $album->metadata = $extractedMetadata['metadata'];
-                }
-
-                $album->save();
-                session()->forget($sessionKey);
-                Log::info('Metadata applied to album and session cleared', ['album_id' => $album->id, 'file_name' => $fileName]);
-                $metadataApplied = true;
-            }
-        }
-
-        Log::info('ensureImagesProcessed completed', ['album_id' => $album->id, 'disk' => $disk, 'metadata_applied' => $metadataApplied]);
-    }
-
-    public static function generateThumbnail($mainNewDirectory, $mainImageUrl, bool $force = false)
-    {
-        Log::info('generateThumbnail started', ['image_url' => $mainImageUrl, 'force' => $force]);
-
-        $disk = self::getDisk();
-        $thumbnailDirectory = "{$mainNewDirectory}/thumbnails";
-        $thumbnailFileName = basename($mainImageUrl);
-        $thumbnailPath = "{$thumbnailDirectory}/{$thumbnailFileName}";
-
-        Log::debug('Thumbnail paths', ['disk' => $disk, 'thumbnail_directory' => $thumbnailDirectory, 'thumbnail_path' => $thumbnailPath]);
-
-        // Check if thumbnail already exists
-        if (Storage::disk($disk)->exists($thumbnailPath) && ! $force) {
-            Log::info('Thumbnail already exists, skipping generation', ['disk' => $disk, 'thumbnail_path' => $thumbnailPath]);
-            return;
-        }
-
-        try {
-            Log::info('Reading image content', ['disk' => $disk, 'image_url' => $mainImageUrl]);
-            // Get the original image content.
-            $imageContent = Storage::disk($disk)->get($mainImageUrl);
-
-            if (self::isEncryptedDisk($disk)) {
-                Log::debug('Disk is encrypted, attempting to decrypt', ['disk' => $disk, 'image_url' => $mainImageUrl]);
-                // Try to decrypt; if decryption fails, abort thumbnail generation to avoid
-                // passing ciphertext to Intervention which will log decoding errors.
-                try {
-                    $imageContent = Crypt::decryptString($imageContent);
-                    Log::info('Image decrypted successfully', ['disk' => $disk, 'image_url' => $mainImageUrl]);
-                } catch (\Exception $e) {
-                    Log::warning('Skipping thumbnail generation for ' . $mainImageUrl . ': decryption failed.', ['disk' => $disk]);
-                    return;
-                }
-            }
-
-            // Create thumbnail using Intervention Image
-            Log::info('Creating thumbnail with Intervention Image', ['disk' => $disk, 'image_url' => $mainImageUrl]);
-            $image = InterventionImage::read($imageContent);
-            $image->cover(200, 200);
-
-            // Save thumbnail. If thumbnail encryption is enabled in config, encrypt it too.
-            if (config('image_encrypt.encrypt_thumbnails', false) && self::isEncryptedDisk($disk)) {
-                Log::info('Encrypting thumbnail', ['disk' => $disk, 'thumbnail_path' => $thumbnailPath]);
-                $thumbContents = $image->toJpeg();
-                $encryptedThumb = Crypt::encryptString($thumbContents);
-                Storage::disk($disk)->put($thumbnailPath, $encryptedThumb, ['visibility' => 'public']);
-                Log::info('Encrypted thumbnail saved', ['disk' => $disk, 'thumbnail_path' => $thumbnailPath]);
-            } else {
-                Log::info('Saving thumbnail (no encryption)', ['disk' => $disk, 'thumbnail_path' => $thumbnailPath]);
-                Storage::disk($disk)->put(
-                    $thumbnailPath,
-                    $image->toJpeg(),
-                    ['visibility' => 'public']
-                );
-                Log::info('Thumbnail saved', ['disk' => $disk, 'thumbnail_path' => $thumbnailPath]);
-            }
-
-            Log::info('generateThumbnail completed', ['disk' => $disk, 'thumbnail_path' => $thumbnailPath]);
-        } catch (\Exception $e) {
-            Log::error('Error generating thumbnail for ' . $mainImageUrl . ': ' . $e->getMessage(), ['disk' => $disk]);
-        }
+        Log::info('ensureImagesProcessed completed', ['album_id' => $album->id, 'disk' => $disk]);
     }
 
     //Used for deleting images that are not in the record's images (the filament component delete the url from the json array, but not from the storage)
