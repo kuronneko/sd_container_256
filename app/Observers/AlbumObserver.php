@@ -29,44 +29,12 @@ class AlbumObserver
     public function deleting(Album $album): void
     {
         $disk = config('filesystems.default');
+        $uploadFolder = $disk === 's3' ? config('filesystems.disks.s3.upload_folder', 'sd_develop') : '';
+        $albumFolder = $uploadFolder ? "{$uploadFolder}/albums/{$album->id}" : "albums/{$album->id}";
 
-        if ($disk === 's3') {
-            // Delete image files from S3 (not whole directory structure)
-            $uploadFolder = config('filesystems.disks.s3.upload_folder', 'sd_develop');
-            $albumsPath = "{$uploadFolder}/albums";
-
-            $images = $album->images ?? [];
-            foreach ($images as $image) {
-                $fileName = basename($image);
-                $imagePath = "{$albumsPath}/{$fileName}";
-                if (Storage::disk('s3')->exists($imagePath)) {
-                    Storage::disk('s3')->delete($imagePath);
-                }
-
-                // Also delete thumbnail
-                $thumbnailPath = "{$albumsPath}/thumbnails/{$fileName}";
-                if (Storage::disk('s3')->exists($thumbnailPath)) {
-                    Storage::disk('s3')->delete($thumbnailPath);
-                }
-            }
-        } else {
-            // Delete image files from local disk
-            $albumsPath = "albums";
-
-            $images = $album->images ?? [];
-            foreach ($images as $image) {
-                $fileName = basename($image);
-                $imagePath = "{$albumsPath}/{$fileName}";
-                if (Storage::disk($disk)->exists($imagePath)) {
-                    Storage::disk($disk)->delete($imagePath);
-                }
-
-                // Also delete thumbnail
-                $thumbnailPath = "{$albumsPath}/thumbnails/{$fileName}";
-                if (Storage::disk($disk)->exists($thumbnailPath)) {
-                    Storage::disk($disk)->delete($thumbnailPath);
-                }
-            }
+        // Delete entire album folder with all images and thumbnails
+        if (Storage::disk($disk)->exists($albumFolder)) {
+            Storage::disk($disk)->deleteDirectory($albumFolder);
         }
     }
 
