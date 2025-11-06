@@ -14,18 +14,18 @@ class CreateAlbum extends CreateRecord
 
     public function afterCreate(): void
     {
-    $disk = config('filesystems.default');
-    Log::info('Album creation started', ['album_id' => $this->record->id, 'image_count' => count($this->record->images ?? []), 'disk' => $disk]);
-
-        // First ensure images are properly processed and encrypted on encrypted disks
-        Log::info('Starting image processing', ['album_id' => $this->record->id, 'disk' => $disk]);
-        ImageService::ensureImagesProcessed($this->record);
-        Log::info('Images processed', ['album_id' => $this->record->id, 'disk' => $disk]);
+        $disk = config('filesystems.default');
+        Log::info('Album creation started', ['album_id' => $this->record->id, 'image_count' => count($this->record->images ?? []), 'disk' => $disk]);
 
         // Then extract metadata and update metadata field
         Log::info('Starting metadata extraction', ['album_id' => $this->record->id, 'disk' => $disk]);
         MetaDataService::extractAndSaveMetadata($this->record);
         Log::info('Album creation completed', ['album_id' => $this->record->id, 'disk' => $disk]);
+
+        // First ensure images are properly processed and encrypted on encrypted disks
+        Log::info('Starting image processing', ['album_id' => $this->record->id, 'disk' => $disk]);
+        ImageService::ensureImagesProcessed($this->record);
+        Log::info('Images processed', ['album_id' => $this->record->id, 'disk' => $disk]);
     }
 
     protected function getRedirectUrl(): string

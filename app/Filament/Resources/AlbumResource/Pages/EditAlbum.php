@@ -22,8 +22,13 @@ class EditAlbum extends EditRecord
 
     protected function afterSave(): void
     {
-    $disk = config('filesystems.default');
-    Log::info('Album update started', ['album_id' => $this->record->id, 'image_count' => count($this->record->images ?? []), 'disk' => $disk]);
+        $disk = config('filesystems.default');
+        Log::info('Album update started', ['album_id' => $this->record->id, 'image_count' => count($this->record->images ?? []), 'disk' => $disk]);
+
+        // Update metadata from current images
+        Log::info('Updating metadata from images', ['album_id' => $this->record->id, 'disk' => $disk]);
+        MetaDataService::updateMetadataFromImages($this->record, true);
+        Log::info('Album update completed', ['album_id' => $this->record->id, 'disk' => $disk]);
 
         // Process and encrypt all images on encrypted disks and generate thumbnails
         Log::info('Starting image processing', ['album_id' => $this->record->id, 'disk' => $disk]);
@@ -34,11 +39,6 @@ class EditAlbum extends EditRecord
         Log::info('Deleting removed images from storage', ['album_id' => $this->record->id, 'disk' => $disk]);
         ImageService::deleteAllImagesWhoAreNotInJsonFromStorage($this->record);
         Log::info('Removed images deleted', ['album_id' => $this->record->id, 'disk' => $disk]);
-
-        // Update metadata from current images
-        Log::info('Updating metadata from images', ['album_id' => $this->record->id, 'disk' => $disk]);
-        MetaDataService::updateMetadataFromImages($this->record);
-        Log::info('Album update completed', ['album_id' => $this->record->id, 'disk' => $disk]);
     }
 
     protected function getRedirectUrl(): string
