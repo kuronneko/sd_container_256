@@ -34,7 +34,7 @@ class AlbumResource extends Resource
         return $form
             ->schema([
                 FileUpload::make('images')
-                    ->hint('If you upload multiple images, it automatically saves the metadata from the first image to all images.')
+                    ->hint('In creation, metadata will be extracted from the first uploaded image. In edit mode, metadata will be updated from any newly uploaded or modified images.')
                     ->helperText('You can upload multiple images. Supported formats: jpg, png, gif. Max 10 images.')
                     ->image()
                     ->required()
