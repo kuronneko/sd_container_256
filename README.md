@@ -129,19 +129,12 @@ B) Docker with Laravel Sail (recommended for consistent dev env)
     ./vendor/bin/sail php artisan storage:link
     ```
 
-### Initial credentials (default seeded user)
+### Initial credentials
 
-If you run the seeders (`php artisan migrate --seed` or the Sail equivalent), the project includes a default seeded login that you can use to access the admin/UI immediately.
-
--   Username / Email: `dev@dev.com`
--   Password: `dev@dev.com`
-
-    This default user is created directly by a migration (`database/migrations/2024_10_13_055124_add_super_user_table.php`) which inserts a super user with the credentials shown above (the password is hashed with `Hash::make`).
-
-If you want to change the password or create a new admin user after running migrations, use `php artisan tinker` and run (example):
+If you want to create a new admin user after running migrations, use `php artisan tinker` and run (example):
 
 ```php
-$user = \App\Models\User::where('email', 'dev@dev.com')->first();
+$user = \App\Models\User::where('email', 'admin@example.com')->first();
 $user->password = bcrypt('your-new-password');
 $user->save();
 ```
