@@ -43,8 +43,8 @@ This README explains how to install, run, and test the project locally or using 
 1. Clone the repository
 
     ```zsh
-    git clone <repo-url> sb_container
-    cd sb_container
+    git clone <repo-url> sd_container_256
+    cd sd_container_256
     ```
 
 2. Install PHP dependencies
@@ -90,8 +90,8 @@ A) Local development (fastest for iteration)
 -   Clone the repository and install PHP dependencies:
 
     ```bash
-    git clone <repo-url> sb_container
-    cd sb_container
+    git clone <repo-url> sd_container_256
+    cd sd_container_256
     composer install
     ```
 
