@@ -26,6 +26,7 @@ This README explains how to install, run, and test the project locally or using 
 -   [Assets (Vite) (Optional)](#assets-vite--optional)
 -   [Troubleshooting](#troubleshooting)
 -   [Project structure highlights](#project-structure-highlights)
+-   [Encrypted image workflow](#encrypted-image-workflow-upload-metadata-streaming-preview)
 -   [Contributing](#contributing)
 -   [License](#license)
 
@@ -359,34 +360,6 @@ This project can use Vite for asset bundling. Frontend steps are optional — th
 
 Explore these folders to learn how albums and images are created, processed, and stored.
 
-## Contributing
-
-Contributions are welcome. Please open issues or pull requests with focused changes. For larger changes, open an issue first to discuss design and impact.
-
-## License
-
-This project follows the MIT license (inherited from the Laravel skeleton). Check the LICENSE file or `composer.json` for details.
-
-## Quick reference commands
-
-```zsh
-# install php deps
-composer install
-
-# set env and generate key
-cp .env.example .env
-php artisan key:generate
-
-# run migrations and seed
-php artisan migrate --seed
-
-# link storage
-php artisan storage:link
-
-# dev server
-php artisan serve
-```
-
 ---
 
 ## Encrypted image workflow (upload, metadata, streaming preview)
@@ -473,6 +446,33 @@ Note: the codebase already contains fields and migrations for many of these colu
 - `app/Http/Controllers/ImageController.php` — streaming preview endpoints
 - `app/Models/Album.php` — mutators/accessors and album fields
 
+## Contributing
+
+Contributions are welcome. Please open issues or pull requests with focused changes. For larger changes, open an issue first to discuss design and impact.
+
+## License
+
+This project follows the MIT license (inherited from the Laravel skeleton). Check the LICENSE file or `composer.json` for details.
+
+## Quick reference commands
+
+```zsh
+# install php deps
+composer install
+
+# set env and generate key
+cp .env.example .env
+php artisan key:generate
+
+# run migrations and seed
+php artisan migrate --seed
+
+# link storage
+php artisan storage:link
+
+# dev server
+php artisan serve
+```
+
 ---
 
-Changes made: appended an "Encrypted image workflow" section summarising the full encrypted pipeline and developer notes. For the complete diagram and timings, read `WORKFLOW.md` at the repo root.
