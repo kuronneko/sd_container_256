@@ -1,15 +1,17 @@
 # SB Container — Image & Album Manager (Laravel)
 
-This repository is a Laravel-based web application that manages albums and images. It includes services for image processing and metadata extraction, Filament-based admin resources, observers for model events, and support for local filesystem or S3 storage.
+This repository is a Laravel-based web application that manages albums and images. It includes a full encrypted-image pipeline (in-memory encryption before upload), session-based metadata extraction (ComfyUI/PNG prompt parsing), thumbnail generation, and a streaming preview system that decrypts images in-memory for browser delivery without ever writing plaintext to disk. The app also uses mutators/accessors (or encrypted casts) on the `Album` model to persist generation fields (prompt, seed, sampler, etc.) safely in the database.
 
 Key components you will find in the codebase:
 
--   Albums and Image management (models, migrations, controllers)
--   `app/Services/ImageService.php` — image resizing/processing and storage operations
--   `app/Services/MetaDataService.php` — extraction and handling of image metadata
--   Observers (e.g., `app/Observers/AlbumObserver.php`) for keeping related state in sync
--   Filament admin resources under `app/Filament/Resources` for admin UI
--   Migrations that include albums, images, loras, comments and super user table additions
+- Albums and Image management (models, migrations, controllers)
+- Encrypted image pipeline: in-memory encrypt-before-upload, thumbnail generation, and post-create processing (see `WORKFLOW.md` for the full diagram and timings)
+- `app/Services/ImageService.php` — image resizing/processing, moving uploaded files into album folders, and thumbnail handling
+- `app/Services/MetaDataService.php` — extraction and handling of image metadata (PNG tEXt chunks / ComfyUI prompts) and applying metadata to albums after create
+- `app/Http/Controllers/ImageController.php` — streaming preview endpoints that load encrypted objects from storage, decrypt in-memory, and stream to the client
+- Observers (e.g., `app/Observers/AlbumObserver.php`) for keeping related state in sync (triggers for `ensureImagesProcessed()` and metadata application)
+- Filament admin resources under `app/Filament/Resources` for admin UI (upload hooks, preview integration)
+- Migrations that include albums, images, loras, comments and super user table additions
 
 This README explains how to install, run, and test the project locally or using Docker.
 
@@ -386,8 +388,6 @@ php artisan serve
 ```
 
 ---
-
-If you'd like, I can also add a short CONTRIBUTING.md, a docker-compose usage section with exact container names, or examples of using the Filament admin UI (routes/credentials). Tell me which extra details you want next.
 
 ## Encrypted image workflow (upload, metadata, streaming preview)
 
