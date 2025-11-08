@@ -1,4 +1,4 @@
-# SB Container — Image & Album Manager (Laravel)
+# Secure Data Container 256 — Image & Album Manager (Laravel)
 
 This repository is a Laravel-based web application that manages albums and images. It includes a full encrypted-image pipeline (in-memory encryption before upload), session-based metadata extraction (ComfyUI/PNG prompt parsing), thumbnail generation, and a streaming preview system that decrypts images in-memory for browser delivery without ever writing plaintext to disk. The app also uses mutators/accessors (or encrypted casts) on the `Album` model to persist generation fields (prompt, seed, sampler, etc.) safely in the database.
 
