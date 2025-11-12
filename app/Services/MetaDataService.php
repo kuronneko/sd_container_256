@@ -25,18 +25,20 @@ class MetaDataService
             return;
         }
 
-        // Check session for metadata from the first image (extracted during upload)
-        foreach ($images as $image) {
+        // Check session for metadata from each image (extracted during upload)
+        foreach ($images as $imageIndex => $image) {
             $fileName = basename($image);
             $sessionKey = "image_metadata_{$fileName}";
             $comfyuiData = session()->get($sessionKey);
 
             if ($comfyuiData) {
-                Log::info('Found metadata in session for first image', ['album_id' => $album->id, 'file_name' => $fileName]);
-                self::saveComfyUIMetadata($album, $comfyuiData);
+                // Use filename as the metadata ID
+                $metadataId = $fileName;
+
+                Log::info('Found metadata in session for image', ['album_id' => $album->id, 'file_name' => $fileName, 'image_index' => $imageIndex, 'metadata_id' => $metadataId]);
+                self::saveComfyUIMetadata($album, $comfyuiData, $metadataId);
                 session()->forget($sessionKey);
-                Log::info('Metadata saved to album', ['album_id' => $album->id, 'file_name' => $fileName]);
-                break; // Only use first image's metadata
+                Log::info('Metadata saved to album', ['album_id' => $album->id, 'file_name' => $fileName, 'image_index' => $imageIndex, 'metadata_id' => $metadataId]);
             }
         }
 
@@ -61,85 +63,224 @@ class MetaDataService
             return;
         }
 
-        $metadataFound = false;
         $disk = config('filesystems.default');
 
-        // Check session for metadata from any image (extracted during upload)
-        foreach ($images as $image) {
+        // We'll rebuild metadata and all parsed arrays in a single pass and overwrite the album's stored values.
+        $rebuiltMetadata = [];
+
+        // Local accumulators for prompt-derived arrays
+        $seedArray = [];
+        $stepsArray = [];
+        $cfgArray = [];
+        $samplerArray = [];
+        $schedulerArray = [];
+        $denoiseArray = [];
+        $widthArray = [];
+        $heightArray = [];
+        $ckptArray = [];
+        $positiveArray = [];
+        $negativeArray = [];
+        $lorasArray = [];
+
+        // Helper that processes a single comfyuiData and accumulates into local arrays
+        $processComfy = function (?array $comfyuiData, string $metadataId) use (&$seedArray, &$stepsArray, &$cfgArray, &$samplerArray, &$schedulerArray, &$denoiseArray, &$widthArray, &$heightArray, &$ckptArray, &$positiveArray, &$negativeArray, &$lorasArray) {
+            if (empty($comfyuiData) || !isset($comfyuiData['prompt']) || !is_array($comfyuiData['prompt'])) {
+                return;
+            }
+
+            $promptData = $comfyuiData['prompt'];
+
+            // First pass to find KSampler and positive/negative nodes
+            $positiveNodeId = null;
+            $negativeNodeId = null;
+            $loraNames = [];
+            $dimensionsFound = false;
+
+            foreach ($promptData as $nodeId => $nodeData) {
+                if (isset($nodeData['class_type']) && $nodeData['class_type'] === 'KSampler') {
+                    $inputs = $nodeData['inputs'] ?? [];
+
+                    if (isset($inputs['seed'])) {
+                        $seedArray[] = ['img' => $metadataId, 'value' => $inputs['seed']];
+                    }
+                    if (isset($inputs['steps'])) {
+                        $stepsArray[] = ['img' => $metadataId, 'value' => $inputs['steps']];
+                    }
+                    if (isset($inputs['cfg'])) {
+                        $cfgArray[] = ['img' => $metadataId, 'value' => $inputs['cfg']];
+                    }
+                    if (isset($inputs['sampler_name'])) {
+                        $samplerArray[] = ['img' => $metadataId, 'value' => $inputs['sampler_name']];
+                    }
+                    if (isset($inputs['scheduler'])) {
+                        $schedulerArray[] = ['img' => $metadataId, 'value' => $inputs['scheduler']];
+                    }
+                    if (isset($inputs['denoise'])) {
+                        $denoiseArray[] = ['img' => $metadataId, 'value' => $inputs['denoise']];
+                    }
+
+                    if (isset($inputs['positive']) && is_array($inputs['positive']) && count($inputs['positive']) > 0) {
+                        $positiveNodeId = (string) $inputs['positive'][0];
+                    }
+                    if (isset($inputs['negative']) && is_array($inputs['negative']) && count($inputs['negative']) > 0) {
+                        $negativeNodeId = (string) $inputs['negative'][0];
+                    }
+
+                    break;
+                }
+            }
+
+            // Second pass: extract other nodes
+            foreach ($promptData as $nodeId => $nodeData) {
+                if (!isset($nodeData['class_type']) || !isset($nodeData['inputs'])) {
+                    continue;
+                }
+
+                $inputs = $nodeData['inputs'];
+                $classType = $nodeData['class_type'];
+
+                switch ($classType) {
+                    case 'CheckpointLoaderSimple':
+                        if (isset($inputs['ckpt_name'])) {
+                            $ckptArray[] = ['img' => $metadataId, 'value' => $inputs['ckpt_name']];
+                        }
+                        break;
+
+                    case 'LoraLoader':
+                        if (isset($inputs['lora_name'])) {
+                            $name = $inputs['lora_name'];
+                            $strengthModel = $inputs['strength_model'] ?? null;
+                            $strengthClip = $inputs['strength_clip'] ?? null;
+
+                            if ($strengthModel !== null || $strengthClip !== null) {
+                                $parts = [];
+                                if ($strengthModel !== null) {
+                                    $parts[] = 'model: ' . $strengthModel;
+                                }
+                                if ($strengthClip !== null) {
+                                    $parts[] = 'clip: ' . $strengthClip;
+                                }
+                                $name = $name . ' (' . implode(', ', $parts) . ')';
+                            }
+
+                            $loraNames[] = ['img' => $metadataId, 'value' => $name];
+                        }
+                        break;
+
+                    case 'EmptyLatentImage':
+                    case 'EmptySD3LatentImage':
+                        if (!$dimensionsFound) {
+                            if (isset($inputs['width'])) {
+                                $widthArray[] = ['img' => $metadataId, 'value' => $inputs['width']];
+                            }
+                            if (isset($inputs['height'])) {
+                                $heightArray[] = ['img' => $metadataId, 'value' => $inputs['height']];
+                            }
+                            $dimensionsFound = true;
+                        }
+                        break;
+
+                    case 'CLIPTextEncode':
+                        if (isset($inputs['text'])) {
+                            $text = $inputs['text'];
+                            $currentNodeId = (string) $nodeId;
+
+                            if ($currentNodeId === $positiveNodeId) {
+                                $positiveArray[] = ['img' => $metadataId, 'value' => $text];
+                            } elseif ($currentNodeId === $negativeNodeId) {
+                                $negativeArray[] = ['img' => $metadataId, 'value' => $text];
+                            }
+                        }
+                        break;
+                }
+            }
+
+            if (!empty($loraNames)) {
+                foreach ($loraNames as $loraName) {
+                    $lorasArray[] = $loraName;
+                }
+            }
+        };
+
+        // Iterate images and collect metadata (session first)
+        foreach ($images as $imageIndex => $image) {
             $fileName = basename($image);
             $sessionKey = "image_metadata_{$fileName}";
             $comfyuiData = session()->get($sessionKey);
 
             if ($comfyuiData) {
-                Log::info('Found metadata in session for image', ['album_id' => $album->id, 'file_name' => $fileName]);
-                self::saveComfyUIMetadata($album, $comfyuiData);
+                $metadataId = $fileName;
+                $rebuiltMetadata[] = [
+                    'img' => $metadataId,
+                    'prompt' => $comfyuiData['prompt'] ?? null,
+                    'workflow' => $comfyuiData['workflow'] ?? null,
+                ];
+
+                // accumulate parsed fields
+                $processComfy($comfyuiData, $metadataId);
+
+                // clear session entry
                 session()->forget($sessionKey);
-                Log::info('Metadata updated from session', ['album_id' => $album->id, 'file_name' => $fileName]);
-                $metadataFound = true;
-                break; // Only use first image's metadata
+                continue;
             }
-        }
 
-        // If force refresh enabled and no session metadata found, try to extract from storage
-        if (!$metadataFound && $forceRefresh) {
-            Log::info('No session metadata found, attempting to extract from storage', ['album_id' => $album->id, 'disk' => $disk, 'image_count' => count($images)]);
-
-            try {
-                foreach ($images as $index => $image) {
-                    $fileName = basename($image);
-                    Log::debug('Attempting to extract metadata from image', ['album_id' => $album->id, 'image_index' => $index, 'file_name' => $fileName]);
-
+            // If forceRefresh requested, try extracting from storage
+            if ($forceRefresh) {
+                try {
                     $normalizedPath = self::getNormalizedImagePath($image);
-                    Log::debug('Normalized image path', ['album_id' => $album->id, 'original' => $image, 'normalized' => $normalizedPath]);
+                    $encryptedContent = Storage::disk($disk)->get($normalizedPath);
 
-                    try {
-                        $encryptedContent = Storage::disk($disk)->get($normalizedPath);
-                        Log::debug('Retrieved encrypted content from storage', ['album_id' => $album->id, 'file_name' => $fileName, 'size' => strlen($encryptedContent)]);
-
-                        if (ImageService::isEncryptedDisk($disk)) {
-                            Log::debug('Decrypting image content', ['album_id' => $album->id, 'file_name' => $fileName]);
-                            try {
-                                $contents = Crypt::decryptString($encryptedContent);
-                                Log::debug('Successfully decrypted image', ['album_id' => $album->id, 'file_name' => $fileName, 'decrypted_size' => strlen($contents)]);
-                            } catch (\Exception $decryptError) {
-                                Log::warning('Failed to decrypt image', ['album_id' => $album->id, 'file_name' => $fileName, 'error' => $decryptError->getMessage()]);
-                                continue;
-                            }
-                        } else {
-                            Log::debug('Using unencrypted content', ['album_id' => $album->id, 'file_name' => $fileName]);
-                            $contents = $encryptedContent;
+                    if (ImageService::isEncryptedDisk($disk)) {
+                        try {
+                            $contents = Crypt::decryptString($encryptedContent);
+                        } catch (\Exception $decryptError) {
+                            Log::warning('Failed to decrypt image during metadata rebuild', ['album_id' => $album->id, 'file_name' => $fileName, 'error' => $decryptError->getMessage()]);
+                            continue;
                         }
-
-                        Log::debug('Extracting metadata from decrypted/raw content', ['album_id' => $album->id, 'file_name' => $fileName, 'content_size' => strlen($contents)]);
-                        $comfyuiData = self::extractMetadataFromContent($contents);
-
-                        if ($comfyuiData) {
-                            Log::info('Metadata extracted from storage', ['album_id' => $album->id, 'file_name' => $fileName, 'keys' => array_keys($comfyuiData)]);
-                            self::saveComfyUIMetadata($album, $comfyuiData);
-                            $metadataFound = true;
-                            break; // Use first image with valid metadata
-                        } else {
-                            Log::info('Image has no embedded metadata - may not be a ComfyUI-generated image', [
-                                'album_id' => $album->id,
-                                'file_name' => $fileName,
-                                'decrypted_size' => strlen($contents),
-                                'suggestion' => 'Re-export image from ComfyUI with metadata embedding enabled'
-                            ]);
-                        }
-                    } catch (\Exception $e) {
-                        Log::warning('Error processing image for metadata', ['album_id' => $album->id, 'file_name' => $fileName, 'error' => $e->getMessage()]);
-                        continue;
+                    } else {
+                        $contents = $encryptedContent;
                     }
+
+                    $comfyuiData = self::extractMetadataFromContent($contents);
+                    if ($comfyuiData) {
+                        $metadataId = $fileName;
+                        $rebuiltMetadata[] = [
+                            'img' => $metadataId,
+                            'prompt' => $comfyuiData['prompt'] ?? null,
+                            'workflow' => $comfyuiData['workflow'] ?? null,
+                        ];
+
+                        $processComfy($comfyuiData, $metadataId);
+                    }
+                } catch (\Exception $e) {
+                    Log::warning('Error extracting metadata during rebuild', ['album_id' => $album->id, 'file_name' => $fileName, 'error' => $e->getMessage()]);
+                    continue;
                 }
-            } catch (\Exception $e) {
-                Log::warning('Force refresh metadata extraction failed', ['album_id' => $album->id, 'error' => $e->getMessage()]);
             }
         }
 
-        if (!$metadataFound) {
-            Log::info('updateMetadataFromImages completed (no metadata found)', ['album_id' => $album->id]);
+        // If we collected any metadata items, overwrite album metadata and parsed arrays
+        if (!empty($rebuiltMetadata)) {
+            $album->metadata = $rebuiltMetadata;
+
+            // Overwrite parsed arrays with rebuilt values
+            $album->seed = $seedArray;
+            $album->steps = $stepsArray;
+            $album->cfg = $cfgArray;
+            $album->sampler_name = $samplerArray;
+            $album->scheduler = $schedulerArray;
+            $album->denoise = $denoiseArray;
+            $album->width = $widthArray;
+            $album->height = $heightArray;
+            $album->ckpt_name = $ckptArray;
+            $album->positive = $positiveArray;
+            $album->negative = $negativeArray;
+            $album->loras = $lorasArray;
+
+            $album->save();
+            Log::info('Rebuilt and overwrote album metadata from images', ['album_id' => $album->id, 'items' => count($rebuiltMetadata)]);
         } else {
-            Log::info('updateMetadataFromImages completed', ['album_id' => $album->id]);
+            Log::info('updateMetadataFromImages completed (no metadata found to rebuild)', ['album_id' => $album->id]);
         }
     }
 
@@ -171,11 +312,8 @@ class MetaDataService
      */
     public static function extractMetadataFromContent($imageContent)
     {
-        Log::info('extractMetadataFromContent started', ['content_size' => strlen($imageContent) ?? 0]);
-
         try {
             if (empty($imageContent)) {
-                Log::warning('Empty image content provided for metadata extraction');
                 return null;
             }
 
@@ -183,17 +321,10 @@ class MetaDataService
             $pngSignature = substr($imageContent, 0, 8);
             $expectedSignature = "\x89PNG\r\n\x1a\n";
             if ($pngSignature !== $expectedSignature) {
-                Log::warning('Invalid PNG signature detected', [
-                    'expected' => bin2hex($expectedSignature),
-                    'received' => bin2hex($pngSignature)
-                ]);
                 return null;
             }
 
-            Log::debug('Valid PNG signature detected, extracting metadata');
-
             // Use an in-memory stream to avoid writing to disk
-            Log::debug('Opening memory stream for PNG metadata extraction');
             $stream = fopen('php://memory', 'r+');
             if ($stream === false) {
                 throw new \Exception('Unable to open memory stream for metadata extraction');
@@ -202,21 +333,12 @@ class MetaDataService
             fwrite($stream, $imageContent);
             rewind($stream);
 
-            Log::debug('Extracting PNG metadata from content');
             $comfyuiData = self::extractPNGMetadata($stream);
-
             fclose($stream);
-
-            if (!empty($comfyuiData)) {
-                Log::info('ComfyUI data extracted successfully from content', ['data_keys' => array_keys($comfyuiData)]);
-            } else {
-                Log::debug('No ComfyUI data found in image content', ['content_size' => strlen($imageContent)]);
-            }
 
             return !empty($comfyuiData) ? $comfyuiData : null;
 
         } catch (\Exception $e) {
-            Log::error('Error extracting ComfyUI data from content: ' . $e->getMessage());
             return null;
         }
     }
@@ -238,7 +360,6 @@ class MetaDataService
         $textChunkCount = 0;
 
         try {
-            // Read PNG file and extract text chunks
             $openedHere = false;
             if (is_string($source)) {
                 $handle = fopen($source, 'rb');
@@ -254,13 +375,11 @@ class MetaDataService
 
             while (!feof($handle)) {
                 $lengthData = fread($handle, 4);
-                if (strlen($lengthData) < 4) break; // EOF reached
+                if (strlen($lengthData) < 4) break;
 
                 $chunkLength = unpack('N', $lengthData)[1] ?? 0;
                 $chunkType = fread($handle, 4);
                 $chunkCount++;
-
-                Log::debug('Processing PNG chunk', ['chunk_number' => $chunkCount, 'type' => $chunkType, 'length' => $chunkLength]);
 
                 if ($chunkType === 'tEXt') {
                     $textChunkCount++;
@@ -271,52 +390,30 @@ class MetaDataService
                         $keyword = substr($chunkData, 0, $nullPos);
                         $text = substr($chunkData, $nullPos + 1);
 
-                        Log::debug('Found tEXt chunk', ['keyword' => $keyword, 'text_length' => strlen($text)]);
-
-                        // Check for ComfyUI metadata keywords
                         if ($keyword === 'prompt' || $keyword === 'workflow') {
                             $jsonData = json_decode($text, true);
                             if (json_last_error() === JSON_ERROR_NONE && is_array($jsonData)) {
-                                Log::info('Successfully parsed ComfyUI ' . $keyword, ['node_count' => count($jsonData)]);
                                 $comfyuiData[$keyword] = $jsonData;
-                            } else {
-                                Log::warning('Failed to parse ' . $keyword . ' JSON', ['error' => json_last_error_msg()]);
                             }
                         }
                     }
                 } else {
-                    // Skip chunk data
                     if ($chunkLength > 0) {
                         fseek($handle, $chunkLength, SEEK_CUR);
                     }
                 }
 
-                // Skip CRC
                 fseek($handle, 4, SEEK_CUR);
 
                 if ($chunkType === 'IEND') break;
             }
 
-            Log::debug('PNG metadata extraction complete', [
-                'total_chunks' => $chunkCount,
-                'text_chunks' => $textChunkCount,
-                'metadata_found' => !empty($comfyuiData),
-                'has_ihdr' => strpos(implode(',', array_column([], 0)), 'IHDR') !== false
-            ]);
-
             if ($openedHere) {
                 fclose($handle);
             }
 
-            // Log specific warning if no tEXt chunks found (image without metadata)
-            if ($textChunkCount === 0 && !empty($comfyuiData) === false) {
-                Log::info('PNG image found but contains no text metadata chunks - image may not have been created with ComfyUI or metadata was stripped', [
-                    'total_chunks' => $chunkCount,
-                    'file_size_bytes' => strlen($GLOBALS['_png_content'] ?? 'unknown')
-                ]);
-            }
         } catch (\Exception $e) {
-            Log::error('Error reading PNG metadata: ' . $e->getMessage());
+            // Silent fail
         }
 
         return $comfyuiData;
@@ -324,97 +421,179 @@ class MetaDataService
 
     /**
      * Save ComfyUI metadata to album
+     * @param Album $album
+     * @param array $comfyuiData
+     * @param string|null $metadataId The ID to use for linking metadata to images
      */
-    protected static function saveComfyUIMetadata(Album $album, array $comfyuiData): void
+    protected static function saveComfyUIMetadata(Album $album, array $comfyuiData, ?string $metadataId = null): void
     {
         $disk = config('filesystems.default');
-        Log::info('saveComfyUIMetadata started', ['album_id' => $album->id, 'disk' => $disk]);
 
-        // Save prompt + workflow in metadata field
-        $metadataContent = "--- ComfyUI Metadata ---\n";
+        // Use the provided metadata ID, or generate one if not provided
+        if (!$metadataId) {
+            $metadataId = uniqid();
+        }
+
+        // Store metadata with img at top level
+        $metadataValue = [
+            'img' => $metadataId,
+            'prompt' => $comfyuiData['prompt'] ?? null,
+            'workflow' => $comfyuiData['workflow'] ?? null
+        ];
+
+        // Append metadata - ensure metadata is always a clean array
+        $currentMetadata = $album->metadata ?? [];
+
+        // If metadata is somehow a string, convert it back to array
+        if (is_string($currentMetadata)) {
+            $decoded = json_decode($currentMetadata, true);
+            $currentMetadata = is_array($decoded) ? $decoded : [];
+        }
+
+        // Ensure it's an indexed array
+        if (!is_array($currentMetadata)) {
+            $currentMetadata = [];
+        }
+
+        // Clean up: recursively decode and flatten any deeply nested/stringified JSON in the metadata
+        $cleanedMetadata = [];
+
+        // Helper: recursively decode JSON strings until no longer a JSON string
+        $recursiveDecode = function ($val) {
+            while (is_string($val)) {
+                $trim = trim($val);
+                if (strlen($trim) === 0) {
+                    break;
+                }
+
+                // Only attempt decode if it looks like JSON array/object
+                $first = $trim[0];
+                if ($first !== '[' && $first !== '{') {
+                    break;
+                }
+
+                $decoded = json_decode($val, true);
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    break;
+                }
+
+                $val = $decoded;
+            }
+
+            return $val;
+        };
+
+        foreach ($currentMetadata as $item) {
+            $item = $recursiveDecode($item);
+
+            if (is_array($item)) {
+                // If it's a numerically indexed array of items, merge
+                $isList = array_keys($item) === range(0, count($item) - 1);
+                if ($isList) {
+                    foreach ($item as $sub) {
+                        // ensure objects remain arrays
+                        if (is_string($sub)) {
+                            $sub = $recursiveDecode($sub);
+                        }
+                        $cleanedMetadata[] = $sub;
+                    }
+                    continue;
+                }
+
+                // Associative array - likely a single metadata object
+                $cleanedMetadata[] = $item;
+                continue;
+            }
+
+            // scalar value or unknown structure - keep as-is
+            $cleanedMetadata[] = $item;
+        }
+
+        $currentMetadata = $cleanedMetadata;
+
+        $currentMetadata[] = $metadataValue;
+        $album->metadata = $currentMetadata;
+
+        // Populate album fields from prompt data - appending to arrays
         if (isset($comfyuiData['prompt'])) {
-            Log::debug('Adding prompt to metadata', ['album_id' => $album->id, 'disk' => $disk]);
-            $metadataContent .= "Prompt:\n" . json_encode($comfyuiData['prompt'], JSON_PRETTY_PRINT) . "\n\n";
-        }
-        if (isset($comfyuiData['workflow'])) {
-            Log::debug('Adding workflow to metadata', ['album_id' => $album->id, 'disk' => $disk]);
-            $metadataContent .= "Workflow:\n" . json_encode($comfyuiData['workflow'], JSON_PRETTY_PRINT);
+            self::parseComfyUIPromptToFields($album, $comfyuiData['prompt'], $metadataId);
         }
 
-        $album->metadata = $metadataContent;
-
-        // Populate album fields from prompt data
-        if (isset($comfyuiData['prompt'])) {
-            Log::info('Parsing ComfyUI prompt to album fields', ['album_id' => $album->id, 'disk' => $disk]);
-            self::parseComfyUIPromptToFields($album, $comfyuiData['prompt']);
-        }
-
+        // Single save at the end
         $album->save();
-        Log::info('saveComfyUIMetadata completed', ['album_id' => $album->id, 'disk' => $disk]);
     }
 
     /**
-     * Parse ComfyUI prompt data and populate album fields
+     * Parse ComfyUI prompt data and append to album array fields
+     * Instead of overwriting, new metadata is appended to existing arrays
+     * @param Album $album
+     * @param array $promptData
+     * @param string|null $metadataId The ID to use for linking metadata to images
      */
-    protected static function parseComfyUIPromptToFields(Album $album, array $promptData): void
+    protected static function parseComfyUIPromptToFields(Album $album, array $promptData, ?string $metadataId = null): void
     {
-        $disk = config('filesystems.default');
-        Log::info('parseComfyUIPromptToFields started', ['album_id' => $album->id, 'disk' => $disk, 'node_count' => count($promptData)]);
+        // Use the provided metadata ID, or generate one if not provided
+        if (!$metadataId) {
+            $metadataId = uniqid();
+        }
+
+        // Cache current values to avoid multiple getter calls
+        $seedArray = $album->seed ?? [];
+        $stepsArray = $album->steps ?? [];
+        $cfgArray = $album->cfg ?? [];
+        $samplerArray = $album->sampler_name ?? [];
+        $schedulerArray = $album->scheduler ?? [];
+        $denoiseArray = $album->denoise ?? [];
+        $widthArray = $album->width ?? [];
+        $heightArray = $album->height ?? [];
+        $ckptArray = $album->ckpt_name ?? [];
+        $positiveArray = $album->positive ?? [];
+        $negativeArray = $album->negative ?? [];
+        $lorasArray = $album->loras ?? [];
 
         // First pass: find KSampler node and get positive/negative references
         $positiveNodeId = null;
         $negativeNodeId = null;
         $loraNames = [];
-        $dimensionsFound = false; // Track if we already found dimensions
+        $dimensionsFound = false;
 
         foreach ($promptData as $nodeId => $nodeData) {
             if (isset($nodeData['class_type']) && $nodeData['class_type'] === 'KSampler') {
-                Log::info('Found KSampler node', ['album_id' => $album->id, 'disk' => $disk, 'node_id' => $nodeId]);
-
                 $inputs = $nodeData['inputs'];
 
                 // Extract sampling parameters
                 if (isset($inputs['seed'])) {
-                    Log::debug('Setting seed', ['album_id' => $album->id, 'disk' => $disk, 'seed' => $inputs['seed']]);
-                    $album->seed = $inputs['seed'];
+                    $seedArray[] = ['img' => $metadataId, 'value' => $inputs['seed']];
                 }
                 if (isset($inputs['steps'])) {
-                    Log::debug('Setting steps', ['album_id' => $album->id, 'disk' => $disk, 'steps' => $inputs['steps']]);
-                    $album->steps = $inputs['steps'];
+                    $stepsArray[] = ['img' => $metadataId, 'value' => $inputs['steps']];
                 }
                 if (isset($inputs['cfg'])) {
-                    Log::debug('Setting cfg', ['album_id' => $album->id, 'disk' => $disk, 'cfg' => $inputs['cfg']]);
-                    $album->cfg = $inputs['cfg'];
+                    $cfgArray[] = ['img' => $metadataId, 'value' => $inputs['cfg']];
                 }
                 if (isset($inputs['sampler_name'])) {
-                    Log::debug('Setting sampler_name', ['album_id' => $album->id, 'disk' => $disk, 'sampler_name' => $inputs['sampler_name']]);
-                    $album->sampler_name = $inputs['sampler_name'];
+                    $samplerArray[] = ['img' => $metadataId, 'value' => $inputs['sampler_name']];
                 }
                 if (isset($inputs['scheduler'])) {
-                    Log::debug('Setting scheduler', ['album_id' => $album->id, 'disk' => $disk, 'scheduler' => $inputs['scheduler']]);
-                    $album->scheduler = $inputs['scheduler'];
+                    $schedulerArray[] = ['img' => $metadataId, 'value' => $inputs['scheduler']];
                 }
                 if (isset($inputs['denoise'])) {
-                    Log::debug('Setting denoise', ['album_id' => $album->id, 'disk' => $disk, 'denoise' => $inputs['denoise']]);
-                    $album->denoise = $inputs['denoise'];
+                    $denoiseArray[] = ['img' => $metadataId, 'value' => $inputs['denoise']];
                 }
 
-                // Get positive/negative node references - array format: [nodeId, outputIndex]
+                // Get positive/negative node references
                 if (isset($inputs['positive']) && is_array($inputs['positive']) && count($inputs['positive']) > 0) {
-                    $positiveNodeId = (string) $inputs['positive'][0]; // Convert to string for comparison
-                    Log::debug('Positive node reference found', ['album_id' => $album->id, 'disk' => $disk, 'node_id' => $positiveNodeId]);
+                    $positiveNodeId = (string) $inputs['positive'][0];
                 }
                 if (isset($inputs['negative']) && is_array($inputs['negative']) && count($inputs['negative']) > 0) {
-                    $negativeNodeId = (string) $inputs['negative'][0]; // Convert to string for comparison
-                    Log::debug('Negative node reference found', ['album_id' => $album->id, 'disk' => $disk, 'node_id' => $negativeNodeId]);
+                    $negativeNodeId = (string) $inputs['negative'][0];
                 }
 
-                Log::debug('KSampler references', ['album_id' => $album->id, 'positive_node_id' => $positiveNodeId, 'negative_node_id' => $negativeNodeId]);
-                break; // Only process first KSampler found
+                break; // Only process first KSampler
             }
         }
 
-        // Second pass: extract other data and map prompts correctly
+        // Second pass: extract other data
         foreach ($promptData as $nodeId => $nodeData) {
             if (!isset($nodeData['class_type']) || !isset($nodeData['inputs'])) {
                 continue;
@@ -423,23 +602,16 @@ class MetaDataService
             $inputs = $nodeData['inputs'];
             $classType = $nodeData['class_type'];
 
-            Log::debug('Processing node', ['album_id' => $album->id, 'disk' => $disk, 'node_id' => $nodeId, 'class_type' => $classType]);
-
             switch ($classType) {
                 case 'CheckpointLoaderSimple':
-                    // Extract model/checkpoint name
                     if (isset($inputs['ckpt_name'])) {
-                        Log::debug('Setting checkpoint', ['album_id' => $album->id, 'disk' => $disk, 'ckpt_name' => $inputs['ckpt_name']]);
-                        $album->ckpt_name = $inputs['ckpt_name'];
+                        $ckptArray[] = ['img' => $metadataId, 'value' => $inputs['ckpt_name']];
                     }
                     break;
 
                 case 'LoraLoader':
-                    // Extract LoRA names (collect all LoRAs) and include strengths when available
                     if (isset($inputs['lora_name'])) {
                         $name = $inputs['lora_name'];
-
-                        // strength for model and clip may be present
                         $strengthModel = $inputs['strength_model'] ?? null;
                         $strengthClip = $inputs['strength_clip'] ?? null;
 
@@ -454,53 +626,57 @@ class MetaDataService
                             $name = $name . ' (' . implode(', ', $parts) . ')';
                         }
 
-                        Log::debug('Adding LoRA', ['album_id' => $album->id, 'disk' => $disk, 'lora_name' => $name]);
-                        $loraNames[] = $name;
+                        $loraNames[] = ['img' => $metadataId, 'value' => $name];
                     }
                     break;
 
                 case 'EmptyLatentImage':
                 case 'EmptySD3LatentImage':
-                    // Extract image dimensions - only from the first dimension node found
                     if (!$dimensionsFound) {
-                        if (isset($inputs['width'])) {
-                            Log::debug('Setting width', ['album_id' => $album->id, 'disk' => $disk, 'width' => $inputs['width']]);
-                            $album->width = $inputs['width'];
+                            if (isset($inputs['width'])) {
+                                $widthArray[] = ['img' => $metadataId, 'value' => $inputs['width']];
                         }
-                        if (isset($inputs['height'])) {
-                            Log::debug('Setting height', ['album_id' => $album->id, 'disk' => $disk, 'height' => $inputs['height']]);
-                            $album->height = $inputs['height'];
+                            if (isset($inputs['height'])) {
+                                $heightArray[] = ['img' => $metadataId, 'value' => $inputs['height']];
                         }
-                        $dimensionsFound = true; // Don't extract from subsequent nodes
+                        $dimensionsFound = true;
                     }
                     break;
 
                 case 'CLIPTextEncode':
-                    // Map prompts using KSampler references
                     if (isset($inputs['text'])) {
                         $text = $inputs['text'];
-                        $currentNodeId = (string) $nodeId; // Ensure string comparison
+                        $currentNodeId = (string) $nodeId;
 
-                        if ($currentNodeId === $positiveNodeId) {
-                            // This is the positive prompt - always update when extracting metadata
-                            Log::debug('Updating positive prompt', ['album_id' => $album->id, 'disk' => $disk, 'node_id' => $currentNodeId, 'text_length' => strlen($text)]);
-                            $album->positive = $text;
-                        } elseif ($currentNodeId === $negativeNodeId) {
-                            // This is the negative prompt - always update when extracting metadata
-                            Log::debug('Updating negative prompt', ['album_id' => $album->id, 'disk' => $disk, 'node_id' => $currentNodeId, 'text_length' => strlen($text)]);
-                            $album->negative = $text;
+                            if ($currentNodeId === $positiveNodeId) {
+                                $positiveArray[] = ['img' => $metadataId, 'value' => $text];
+                            } elseif ($currentNodeId === $negativeNodeId) {
+                                $negativeArray[] = ['img' => $metadataId, 'value' => $text];
                         }
                     }
                     break;
             }
         }
 
-        // Save LoRA names separated by comma
-        if (!empty($loraNames)) {
-            Log::info('Setting LoRAs', ['album_id' => $album->id, 'disk' => $disk, 'lora_count' => count($loraNames)]);
-            $album->loras = implode(', ', $loraNames);
-        }
+        // Batch assign all arrays at once
+        $album->seed = $seedArray;
+        $album->steps = $stepsArray;
+        $album->cfg = $cfgArray;
+        $album->sampler_name = $samplerArray;
+        $album->scheduler = $schedulerArray;
+        $album->denoise = $denoiseArray;
+        $album->width = $widthArray;
+        $album->height = $heightArray;
+        $album->ckpt_name = $ckptArray;
+        $album->positive = $positiveArray;
+        $album->negative = $negativeArray;
 
-        Log::info('parseComfyUIPromptToFields completed', ['album_id' => $album->id, 'disk' => $disk]);
+        // Add LoRAs if found
+        if (!empty($loraNames)) {
+            foreach ($loraNames as $loraName) {
+                $lorasArray[] = $loraName;
+            }
+            $album->loras = $lorasArray;
+        }
     }
 }

@@ -42,10 +42,10 @@
                         | <strong>Created:</strong>
                         {{ $album->created_at->timezone('America/Santiago')->format('d M Y') }}
                         | <strong>Images:</strong> {{ ($album->count_images) }}
-                        | <strong>Model:</strong> {{ $album->ckpt_name ?? 'N/A' }}
-                        | <strong>Seed:</strong> {{ $album->seed ?? 'N/A' }}
+                        | <strong>Model:</strong> {{ is_array($album->ckpt_name) && !empty($album->ckpt_name) ? (is_array($album->ckpt_name[0]) && isset($album->ckpt_name[0]['value']) ? $album->ckpt_name[0]['value'] : $album->ckpt_name[0]) : 'N/A' }}
+                        | <strong>Seed:</strong> {{ is_array($album->seed) && !empty($album->seed) ? (is_array($album->seed[0]) && isset($album->seed[0]['value']) ? $album->seed[0]['value'] : $album->seed[0]) : 'N/A' }}
                         | <strong>Dimensions:</strong>
-                        {{ ($album->width ?? 'N/A') . ' x ' . ($album->height ?? 'N/A') }}
+                        {{ (is_array($album->width) && !empty($album->width) ? (is_array($album->width[0]) && isset($album->width[0]['value']) ? $album->width[0]['value'] : $album->width[0]) : 'N/A') . ' x ' . (is_array($album->height) && !empty($album->height) ? (is_array($album->height[0]) && isset($album->height[0]['value']) ? $album->height[0]['value'] : $album->height[0]) : 'N/A') }}
                     </p>
                     <div class="flex flex-wrap justify-center gap-4"
                         style="min-height: 220px; display: flex; align-items: center;">
