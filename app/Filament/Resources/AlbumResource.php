@@ -515,8 +515,8 @@ class AlbumResource extends Resource
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
             ])
-            ->paginated([10, 25, 50, 100, 1000])
-            ->defaultPaginationPageOption(10)
+            ->paginated([9, 25, 50, 100, 1000])
+            ->defaultPaginationPageOption(9)
             ->defaultSort('id', 'desc');
     }
 
