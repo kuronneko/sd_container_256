@@ -400,4 +400,50 @@ class Album extends Model
             return $item;
         }, $items));
     }
+
+    /**
+     * Return the index of the image that matches the given filename (basename).
+     * Returns null if not found.
+     *
+     * @param string $filename
+     * @return int|null
+     */
+    public function indexForFilename(string $filename)
+    {
+        $images = $this->images ?? [];
+        foreach ($images as $i => $path) {
+            if (basename($path) === $filename) {
+                return $i;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Return a metadata value for a given field at the provided index.
+     * Handles items that may be arrays like ['value' => '...'] or scalar values.
+     *
+     * @param string $field
+     * @param int $index
+     * @return mixed|null
+     */
+    public function metadataAt(string $field, int $index)
+    {
+        if (!property_exists($this, $field) && !isset($this->{$field})) {
+            // Try accessing via attribute getters (e.g., ckpt_name uses getCkptNameAttribute)
+            $arr = $this->{$field} ?? [];
+        } else {
+            $arr = $this->{$field} ?? [];
+        }
+
+        if (!is_array($arr) || !array_key_exists($index, $arr)) {
+            return null;
+        }
+
+        $val = $arr[$index];
+        if (is_array($val) && isset($val['value'])) {
+            return $val['value'];
+        }
+        return $val;
+    }
 }
