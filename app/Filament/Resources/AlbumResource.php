@@ -19,6 +19,7 @@ use Illuminate\Database\Eloquent\SoftDeletingScope;
 use App\Filament\Resources\AlbumResource\RelationManagers;
 use App\Services\ImageService;
 use App\Services\MetaDataService;
+use App\Services\SearchCacheService;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Storage;
 use Intervention\Image\Laravel\Facades\Image as InterventionImage;
@@ -28,6 +29,50 @@ class AlbumResource extends Resource
     protected static ?string $model = Album::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
+
+    /**
+     * Format data for display: if array, encode as JSON but remove quotes from string values
+     */
+    protected static function formatForDisplay($data)
+    {
+        if (!is_array($data)) {
+            return $data;
+        }
+
+        // Encode array as JSON
+        $json = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+
+        // Remove quotes from simple string values (like "dpmpp_2m" becomes dpmpp_2m)
+        // Match pattern: ": "value" or [  "value"  ] where value has no special chars or nested quotes
+        $json = preg_replace('/"([a-zA-Z0-9_\-\.]+)"(\s*[,\]\}])/m', '$1$2', $json);
+
+        return $json;
+    }
+
+    /**
+     * Extract value from id/value structure, handling both array and string formats
+     */
+    protected static function extractValue($item)
+    {
+        if (is_array($item) && isset($item['value'])) {
+            return $item['value'];
+        }
+        return $item;
+    }
+
+    /**
+     * Extract and join all values from an array field with their IDs
+     * Useful for displaying id/value pairs in JSON format
+     */
+    protected static function extractAllValues($items, $separator = "\n")
+    {
+        if (!is_array($items)) {
+            return json_encode($items, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        }
+
+        // Return JSON representation of the entire array with ID and value pairs
+        return json_encode($items, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+    }
 
     public static function form(Form $form): Form
     {
@@ -59,11 +104,17 @@ class AlbumResource extends Resource
                             $uploadFolder = config('filesystems.disks.s3.upload_folder', 'sd_develop');
                             $formatted = [];
                             foreach ((array) $state as $path) {
-                                // Add prefix if not already present
-                                if (strpos($path, $uploadFolder) === false) {
-                                    $formatted[] = "{$uploadFolder}/{$path}";
+                                // Ensure $path is a string before using strpos
+                                if (is_string($path)) {
+                                    // Add prefix if not already present
+                                    if (strpos($path, $uploadFolder) === false) {
+                                        $formatted[] = "{$uploadFolder}/{$path}";
+                                    } else {
+                                        $formatted[] = $path;
+                                    }
                                 } else {
-                                    $formatted[] = $path;
+                                    // Skip non-string entries
+                                    continue;
                                 }
                             }
                             return $formatted;
@@ -83,7 +134,10 @@ class AlbumResource extends Resource
                             $uploadFolder = config('filesystems.disks.s3.upload_folder', 'sd_develop');
                             $normalized = [];
                             foreach ((array) $state as $path) {
-                                $normalized[] = str_replace($uploadFolder . '/', '', $path);
+                                // Ensure $path is a string before processing
+                                if (is_string($path)) {
+                                    $normalized[] = str_replace($uploadFolder . '/', '', $path);
+                                }
                             }
                             return $normalized;
                         }
@@ -113,9 +167,14 @@ class AlbumResource extends Resource
                         // Infer MIME type from file extension (encrypted objects don't report image/* MIME)
                         $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
                         $mimeMap = [
-                            'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png',
-                            'gif' => 'image/gif', 'webp' => 'image/webp', 'svg' => 'image/svg+xml',
-                            'bmp' => 'image/bmp', 'tiff' => 'image/tiff',
+                            'jpg' => 'image/jpeg',
+                            'jpeg' => 'image/jpeg',
+                            'png' => 'image/png',
+                            'gif' => 'image/gif',
+                            'webp' => 'image/webp',
+                            'svg' => 'image/svg+xml',
+                            'bmp' => 'image/bmp',
+                            'tiff' => 'image/tiff',
                         ];
                         $type = $mimeMap[$ext] ?? 'image/jpeg';
 
@@ -210,12 +269,10 @@ class AlbumResource extends Resource
                             ->schema([
                                 Forms\Components\RichEditor::make('positive')
                                     ->placeholder('Metadata will be automatically extracted from the first uploaded image')
-                                    ->formatStateUsing(fn($state, $record) => $record ? $record->positive : $state)
-                                    ->dehydrateStateUsing(fn($state) => \App\Models\Album::encryptValue($state)),
+                                    ->formatStateUsing(fn($state, $record) => $record && !empty($record->positive) ? self::formatForDisplay($record->positive) : $state),
                                 Forms\Components\RichEditor::make('negative')
                                     ->placeholder('Metadata will be automatically extracted from the first uploaded image')
-                                    ->formatStateUsing(fn($state, $record) => $record ? $record->negative : $state)
-                                    ->dehydrateStateUsing(fn($state) => \App\Models\Album::encryptValue($state)),
+                                    ->formatStateUsing(fn($state, $record) => $record && !empty($record->negative) ? self::formatForDisplay($record->negative) : $state),
                             ]),
                     ])
                     ->collapsible()
@@ -225,77 +282,86 @@ class AlbumResource extends Resource
                     ->schema([
                         Forms\Components\Grid::make(2)
                             ->schema([
-                                Forms\Components\TextInput::make('seed')
-                                    ->numeric()
+                                Forms\Components\Textarea::make('seed')
+                                    ->rows(5)
+                                    ->autosize()
                                     ->placeholder('Metadata will be automatically extracted from the first uploaded image')
-                                    ->formatStateUsing(fn($state, $record) => $record ? $record->seed : $state)
-                                    ->dehydrateStateUsing(fn($state) => \App\Models\Album::encryptValue($state)),
+                                    ->formatStateUsing(fn($state, $record) => $record && !empty($record->seed) ? self::formatForDisplay($record->seed) : $state),
 
-                                Forms\Components\TextInput::make('steps')
-                                    ->numeric()
+                                Forms\Components\Textarea::make('steps')
+                                    ->rows(5)
+                                    ->autosize()
                                     ->placeholder('Metadata will be automatically extracted from the first uploaded image')
-                                    ->formatStateUsing(fn($state, $record) => $record ? $record->steps : $state)
-                                    ->dehydrateStateUsing(fn($state) => \App\Models\Album::encryptValue($state)),
+                                    ->formatStateUsing(fn($state, $record) => $record && !empty($record->steps) ? self::formatForDisplay($record->steps) : $state),
 
-                                Forms\Components\TextInput::make('cfg')
-                                    ->numeric()
-                                    ->step(0.1)
+                                Forms\Components\Textarea::make('cfg')
+                                    ->rows(5)
+                                    ->autosize()
                                     ->placeholder('Metadata will be automatically extracted from the first uploaded image')
-                                    ->formatStateUsing(fn($state, $record) => $record ? $record->cfg : $state)
-                                    ->dehydrateStateUsing(fn($state) => \App\Models\Album::encryptValue($state)),
+                                    ->formatStateUsing(fn($state, $record) => $record && !empty($record->cfg) ? self::formatForDisplay($record->cfg) : $state),
 
-                                Forms\Components\TextInput::make('sampler_name')
+                                Forms\Components\Textarea::make('sampler_name')
+                                    ->rows(5)
+                                    ->autosize()
                                     ->placeholder('Metadata will be automatically extracted from the first uploaded image')
-                                    ->formatStateUsing(fn($state, $record) => $record ? $record->sampler_name : $state)
-                                    ->dehydrateStateUsing(fn($state) => \App\Models\Album::encryptValue($state)),
+                                    ->formatStateUsing(fn($state, $record) => $record && !empty($record->sampler_name) ? self::formatForDisplay($record->sampler_name) : $state),
 
-                                Forms\Components\TextInput::make('scheduler')
+                                Forms\Components\Textarea::make('scheduler')
+                                    ->rows(5)
+                                    ->autosize()
                                     ->placeholder('Metadata will be automatically extracted from the first uploaded image')
-                                    ->formatStateUsing(fn($state, $record) => $record ? $record->scheduler : $state)
-                                    ->dehydrateStateUsing(fn($state) => \App\Models\Album::encryptValue($state)),
+                                    ->formatStateUsing(fn($state, $record) => $record && !empty($record->scheduler) ? self::formatForDisplay($record->scheduler) : $state),
 
-                                Forms\Components\TextInput::make('denoise')
-                                    ->numeric()
-                                    ->step(0.01)
+                                Forms\Components\Textarea::make('denoise')
+                                    ->rows(5)
+                                    ->autosize()
                                     ->placeholder('Metadata will be automatically extracted from the first uploaded image')
-                                    ->formatStateUsing(fn($state, $record) => $record ? $record->denoise : $state)
-                                    ->dehydrateStateUsing(fn($state) => \App\Models\Album::encryptValue($state)),
+                                    ->formatStateUsing(fn($state, $record) => $record && !empty($record->denoise) ? self::formatForDisplay($record->denoise) : $state),
 
-                                Forms\Components\TextInput::make('width')
-                                    ->numeric()
+                                Forms\Components\Textarea::make('width')
+                                    ->rows(5)
+                                    ->autosize()
                                     ->placeholder('Metadata will be automatically extracted from the first uploaded image')
-                                    ->formatStateUsing(fn($state, $record) => $record ? $record->width : $state)
-                                    ->dehydrateStateUsing(fn($state) => \App\Models\Album::encryptValue($state)),
+                                    ->formatStateUsing(fn($state, $record) => $record && !empty($record->width) ? self::formatForDisplay($record->width) : $state),
 
-                                Forms\Components\TextInput::make('height')
-                                    ->numeric()
+                                Forms\Components\Textarea::make('height')
+                                    ->rows(5)
+                                    ->autosize()
                                     ->placeholder('Metadata will be automatically extracted from the first uploaded image')
-                                    ->formatStateUsing(fn($state, $record) => $record ? $record->height : $state)
-                                    ->dehydrateStateUsing(fn($state) => \App\Models\Album::encryptValue($state)),
+                                    ->formatStateUsing(fn($state, $record) => $record && !empty($record->height) ? self::formatForDisplay($record->height) : $state),
                             ]),
 
-                        Forms\Components\TextInput::make('ckpt_name')
+                        Forms\Components\Textarea::make('ckpt_name')
                             ->label('Model/Checkpoint')
+                            ->rows(5)
+                            ->autosize()
                             ->columnSpanFull()
                             ->placeholder('Metadata will be automatically extracted from the first uploaded image')
-                            ->formatStateUsing(fn($state, $record) => $record ? $record->ckpt_name : $state)
-                            ->dehydrateStateUsing(fn($state) => \App\Models\Album::encryptValue($state)),
-                        Forms\Components\TextInput::make('loras')
+                            ->formatStateUsing(fn($state, $record) => $record && !empty($record->ckpt_name) ? self::formatForDisplay($record->ckpt_name) : $state),
+                        Forms\Components\Textarea::make('loras')
                             ->label('LoRA Names')
+                            ->rows(5)
+                            ->autosize()
                             ->placeholder('Metadata will be automatically extracted from the first uploaded image')
-                            ->formatStateUsing(fn($state, $record) => $record ? $record->loras : $state)
-                            ->dehydrateStateUsing(fn($state) => \App\Models\Album::encryptValue($state)),
+                            ->formatStateUsing(fn($state, $record) => $record && !empty($record->loras) ? self::formatForDisplay($record->loras) : $state),
                     ])
                     ->collapsible()
                     ->collapsed(),
 
                 Forms\Components\Section::make('Metadata')
                     ->schema([
-                        Forms\Components\RichEditor::make('metadata')
-                                    ->columnSpanFull()
-                                    ->placeholder('Metadata will be automatically extracted from the first uploaded image')
-                                    ->formatStateUsing(fn($state, $record) => $record ? $record->metadata : $state)
-                                    ->dehydrateStateUsing(fn($state) => \App\Models\Album::encryptValue($state))
+                        Forms\Components\Textarea::make('metadata')
+                            ->rows(8)
+                            ->autosize()
+                            ->columnSpanFull()
+                            ->placeholder('Metadata will be automatically extracted from the first uploaded image')
+                            ->formatStateUsing(function ($state, $record) {
+                                if ($record && !empty($record->metadata)) {
+                                    // metadata is always an array from decryptArray()
+                                    return self::formatForDisplay($record->metadata);
+                                }
+                                return $state;
+                            })
                     ])
                     ->collapsible()
                     ->collapsed(),
@@ -303,11 +369,10 @@ class AlbumResource extends Resource
                 Forms\Components\Section::make('Comment')
                     ->schema([
                         Forms\Components\Textarea::make('comment')
-                            ->rows(3)
+                            ->rows(4)
+                            ->autosize()
                             ->columnSpanFull()
-                            ->placeholder('Add any notes or comments about this album...')
-                            ->formatStateUsing(fn($state, $record) => $record ? $record->comment : $state)
-                            ->dehydrateStateUsing(fn($state) => \App\Models\Album::encryptValue($state)),
+                            ->placeholder('Add any notes or comments about this album...'),
                     ]),
             ]);
     }
@@ -317,7 +382,6 @@ class AlbumResource extends Resource
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('id')
-                    ->searchable()
                     ->sortable()
                     ->label('ID'),
                 ImageColumn::make('prepared_thumbnail_url')
@@ -358,45 +422,60 @@ class AlbumResource extends Resource
                 Tables\Columns\TextColumn::make('ckpt_name')
                     ->label('Model')
                     ->searchable()
-                    ->limit(30)
-                    ->getStateUsing(fn($record) => $record ? $record->ckpt_name : ''),
+                    ->html() // Permitir saltos de línea en HTML
+                    ->getStateUsing(function ($record) {
+                        if ($record && !empty($record->ckpt_name) && is_array($record->ckpt_name)) {
+                            $items = array_map(function ($i) {
+                                return self::extractValue($i);
+                            }, $record->ckpt_name);
+                            return implode("<br>", array_filter($items, fn($v) => $v !== null && $v !== ''));
+                        }
+                        return '';
+                    }),
+
                 Tables\Columns\TextColumn::make('seed')
-                    ->searchable()
                     ->label('Seed')
-                    ->getStateUsing(fn($record) => $record ? $record->seed : ''),
+                    ->searchable()
+                    ->html()
+                    ->getStateUsing(function ($record) {
+                        if ($record && !empty($record->seed) && is_array($record->seed)) {
+                            $items = array_map(function ($i) {
+                                return self::extractValue($i);
+                            }, $record->seed);
+                            return implode("<br>", array_filter($items, fn($v) => $v !== null && $v !== ''));
+                        }
+                        return '';
+                    }),
+
                 Tables\Columns\TextColumn::make('dimensions')
                     ->label('Dimensions')
-                    ->getStateUsing(fn($record) => ($record->width ?? 'N/A') . ' x ' . ($record->height ?? 'N/A')),
+                    ->html()
+                    ->getStateUsing(function ($record) {
+                        $widths = is_array($record->width) ? $record->width : [];
+                        $heights = is_array($record->height) ? $record->height : [];
+
+                        $max = max(count($widths), count($heights), 1);
+                        $lines = [];
+
+                        for ($i = 0; $i < $max; $i++) {
+                            $w = $widths[$i] ?? null;
+                            $h = $heights[$i] ?? null;
+
+                            $wVal = $w !== null ? self::extractValue($w) : 'N/A';
+                            $hVal = $h !== null ? self::extractValue($h) : 'N/A';
+
+                            $lines[] = $wVal . ' x ' . $hVal;
+                        }
+
+                        return implode("<br>", $lines);
+                    }),
+
                 Tables\Columns\TextColumn::make('updated_at')
                     ->dateTime()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
-            ->filters([
-                Filter::make('positive')
-                    ->form([
-                        Forms\Components\TextInput::make('positive')->label('Positive contains')->disabled()->placeholder('(Under development)'),
-                    ])
-                    ->query(function (Builder $query, array $data) {
-                        if (empty($data['positive'])) {
-                            return $query;
-                        }
-
-                        return $query->where('positive', 'like', '%' . $data['positive'] . '%');
-                    }),
-
-                Filter::make('negative')
-                    ->form([
-                        Forms\Components\TextInput::make('negative')->label('Negative contains')->disabled()->placeholder('(Under development)'),
-                    ])
-                    ->query(function (Builder $query, array $data) {
-                        if (empty($data['negative'])) {
-                            return $query;
-                        }
-
-                        return $query->where('negative', 'like', '%' . $data['negative'] . '%');
-                    }),
-            ])
+            ->filters([])
             ->actions([
                 Tables\Actions\ViewAction::make()
                     ->label(''),
@@ -411,8 +490,8 @@ class AlbumResource extends Resource
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
             ])
-            ->paginated([10, 25, 50, 100, 1000])
-            ->defaultPaginationPageOption(10)
+            ->paginated([9, 25, 50, 100, 1000])
+            ->defaultPaginationPageOption(9)
             ->defaultSort('id', 'desc');
     }
 

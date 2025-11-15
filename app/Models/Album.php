@@ -71,6 +71,7 @@ class Album extends Model
     /**
      * Normalize and encrypt images before saving to DB.
      * Accepts UUID=>path maps (from Filament), indexed arrays, or JSON strings.
+     * Stores images as plain paths without ID wrapper.
      */
     public function setImagesAttribute($value)
     {
@@ -148,178 +149,301 @@ class Album extends Model
     }
 
     /**
-     * Decrypt a value if possible. Returns original value if decryption fails.
+     * Decrypt and return as array. Handles encrypted/plain JSON or single values.
+     * Similar to getImagesAttribute but for metadata fields.
      */
-    public static function decryptValue($value)
+    public function decryptArray($value)
     {
-        if (is_null($value) || $value === '') {
-            return $value;
+        if (empty($value)) {
+            return [];
         }
 
         try {
-            return Crypt::decryptString($value);
-        } catch (\Exception $e) {
-            return $value;
+            $decrypted = Crypt::decryptString($value);
+            $json = $decrypted;
+        } catch (\Throwable $e) {
+            $json = $value;
         }
+
+        $decoded = json_decode($json, true);
+        if (is_array($decoded)) {
+            $result = array_values($decoded);
+            // Unwrap any quoted strings in the array
+            return array_map(function($item) {
+                if (is_string($item) && (substr($item, 0, 1) === '"' && substr($item, -1) === '"')) {
+                    // Try to decode as JSON string
+                    $unquoted = json_decode($item, true);
+                    return $unquoted !== null ? $unquoted : $item;
+                }
+                return $item;
+            }, $result);
+        }
+
+        // If it decoded to a non-array (string/number), wrap it in an array for consistency
+        if ($decoded !== null && !is_array($decoded)) {
+            return [$decoded];
+        }
+
+        // Return raw JSON wrapped in array if decode failed (plain text)
+        return [$json];
     }
 
     /**
-     * Encrypt a value if it isn't already encrypted.
+     * Encrypt array as JSON. Accepts arrays or JSON strings.
+     * Similar to setImagesAttribute but for metadata fields.
      */
-    public static function encryptValue($value)
+    public function encryptArray($value)
     {
-        if (is_null($value) || $value === '') {
-            return $value;
+        $arr = [];
+
+        if (is_string($value)) {
+            $decoded = json_decode($value, true);
+            $arr = is_array($decoded) ? $decoded : [$value];
+        } elseif (is_array($value)) {
+            $arr = $value;
         }
 
-        try {
-            // If this succeeds, it's already encrypted
-            Crypt::decryptString($value);
-            return $value;
-        } catch (\Exception $e) {
-            return Crypt::encryptString((string) $value);
-        }
+        $arr = array_values($arr);
+        $json = json_encode($arr);
+
+        return Crypt::encryptString($json);
     }
 
-    // Mutators / Accessors for encrypted fields
+
+    // Mutators / Accessors for metadata array fields (encrypted arrays like images)
     public function setPositiveAttribute($value)
     {
-        $this->attributes['positive'] = self::encryptValue($value);
+        $this->attributes['positive'] = $this->encryptArray($value);
     }
 
     public function getPositiveAttribute($value)
     {
-        return self::decryptValue($value);
+        return $this->normalizeMetadataKeys($this->decryptArray($value));
     }
 
     public function setNegativeAttribute($value)
     {
-        $this->attributes['negative'] = self::encryptValue($value);
+        $this->attributes['negative'] = $this->encryptArray($value);
     }
 
     public function getNegativeAttribute($value)
     {
-        return self::decryptValue($value);
+        return $this->normalizeMetadataKeys($this->decryptArray($value));
     }
 
     public function setMetadataAttribute($value)
     {
-        $this->attributes['metadata'] = self::encryptValue($value);
+        $this->attributes['metadata'] = $this->encryptArray($value);
     }
 
     public function getMetadataAttribute($value)
     {
-        return self::decryptValue($value);
+        return $this->normalizeMetadataKeys($this->decryptArray($value));
     }
 
     public function setCommentAttribute($value)
     {
-        $this->attributes['comment'] = self::encryptValue($value);
+        if (is_array($value)) {
+            // If array is passed (from old structure), take first element
+            $value = $value[0] ?? '';
+        }
+        $this->attributes['comment'] = Crypt::encryptString((string) $value);
     }
 
     public function getCommentAttribute($value)
     {
-        return self::decryptValue($value);
+        if (empty($value)) {
+            return '';
+        }
+
+        try {
+            return Crypt::decryptString($value);
+        } catch (\Throwable $e) {
+            return $value;
+        }
     }
 
     public function setLorasAttribute($value)
     {
-        $this->attributes['loras'] = self::encryptValue($value);
+        $this->attributes['loras'] = $this->encryptArray($value);
     }
 
     public function getLorasAttribute($value)
     {
-        return self::decryptValue($value);
+        return $this->normalizeMetadataKeys($this->decryptArray($value));
     }
 
-    // Numeric or short fields saved as longText and encrypted
+    // Numeric or array fields saved as longText and encrypted
     public function setSeedAttribute($value)
     {
-        $this->attributes['seed'] = self::encryptValue($value);
+        $this->attributes['seed'] = $this->encryptArray($value);
     }
 
     public function getSeedAttribute($value)
     {
-        return self::decryptValue($value);
+        return $this->normalizeMetadataKeys($this->decryptArray($value));
     }
 
     public function setStepsAttribute($value)
     {
-        $this->attributes['steps'] = self::encryptValue($value);
+        $this->attributes['steps'] = $this->encryptArray($value);
     }
 
     public function getStepsAttribute($value)
     {
-        return self::decryptValue($value);
+        return $this->normalizeMetadataKeys($this->decryptArray($value));
     }
 
     public function setCfgAttribute($value)
     {
-        $this->attributes['cfg'] = self::encryptValue($value);
+        $this->attributes['cfg'] = $this->encryptArray($value);
     }
 
     public function getCfgAttribute($value)
     {
-        return self::decryptValue($value);
+        return $this->normalizeMetadataKeys($this->decryptArray($value));
     }
 
     public function setSamplerNameAttribute($value)
     {
-        $this->attributes['sampler_name'] = self::encryptValue($value);
+        $this->attributes['sampler_name'] = $this->encryptArray($value);
     }
 
     public function getSamplerNameAttribute($value)
     {
-        return self::decryptValue($value);
+        return $this->normalizeMetadataKeys($this->decryptArray($value));
     }
 
     public function setSchedulerAttribute($value)
     {
-        $this->attributes['scheduler'] = self::encryptValue($value);
+        $this->attributes['scheduler'] = $this->encryptArray($value);
     }
 
     public function getSchedulerAttribute($value)
     {
-        return self::decryptValue($value);
+        return $this->normalizeMetadataKeys($this->decryptArray($value));
     }
 
     public function setDenoiseAttribute($value)
     {
-        $this->attributes['denoise'] = self::encryptValue($value);
+        $this->attributes['denoise'] = $this->encryptArray($value);
     }
 
     public function getDenoiseAttribute($value)
     {
-        return self::decryptValue($value);
+        return $this->normalizeMetadataKeys($this->decryptArray($value));
     }
 
     public function setCkptNameAttribute($value)
     {
-        $this->attributes['ckpt_name'] = self::encryptValue($value);
+        $this->attributes['ckpt_name'] = $this->encryptArray($value);
     }
 
     public function getCkptNameAttribute($value)
     {
-        return self::decryptValue($value);
+        return $this->normalizeMetadataKeys($this->decryptArray($value));
     }
 
     public function setWidthAttribute($value)
     {
-        $this->attributes['width'] = self::encryptValue($value);
+        $this->attributes['width'] = $this->encryptArray($value);
     }
 
     public function getWidthAttribute($value)
     {
-        return self::decryptValue($value);
+        return $this->normalizeMetadataKeys($this->decryptArray($value));
     }
 
     public function setHeightAttribute($value)
     {
-        $this->attributes['height'] = self::encryptValue($value);
+        $this->attributes['height'] = $this->encryptArray($value);
     }
 
     public function getHeightAttribute($value)
     {
-        return self::decryptValue($value);
+        return $this->normalizeMetadataKeys($this->decryptArray($value));
+    }
+
+    /**
+     * Normalize legacy metadata item keys. If an item uses 'id' as the image key
+     * convert it to 'img'. Works for arrays of items and returns non-arrays untouched.
+     *
+     * @param mixed $items
+     * @return mixed
+     */
+    private function normalizeMetadataKeys($items)
+    {
+        if (!is_array($items)) {
+            return $items;
+        }
+
+        return array_values(array_map(function ($item) {
+            if (is_array($item)) {
+                // Convert top-level 'id' => 'img' for compatibility
+                if (array_key_exists('id', $item) && !array_key_exists('img', $item)) {
+                    $item['img'] = $item['id'];
+                    unset($item['id']);
+                }
+
+                // Also handle nested arrays where individual elements may be id=>value pairs
+                foreach ($item as $k => $v) {
+                    if (is_array($v)) {
+                        // If nested array has 'id' keys, convert them as well
+                        if (array_key_exists('id', $v) && !array_key_exists('img', $v)) {
+                            $v['img'] = $v['id'];
+                            unset($v['id']);
+                            $item[$k] = $v;
+                        }
+                    }
+                }
+            }
+            return $item;
+        }, $items));
+    }
+
+    /**
+     * Return the index of the image that matches the given filename (basename).
+     * Returns null if not found.
+     *
+     * @param string $filename
+     * @return int|null
+     */
+    public function indexForFilename(string $filename)
+    {
+        $images = $this->images ?? [];
+        foreach ($images as $i => $path) {
+            if (basename($path) === $filename) {
+                return $i;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Return a metadata value for a given field at the provided index.
+     * Handles items that may be arrays like ['value' => '...'] or scalar values.
+     *
+     * @param string $field
+     * @param int $index
+     * @return mixed|null
+     */
+    public function metadataAt(string $field, int $index)
+    {
+        if (!property_exists($this, $field) && !isset($this->{$field})) {
+            // Try accessing via attribute getters (e.g., ckpt_name uses getCkptNameAttribute)
+            $arr = $this->{$field} ?? [];
+        } else {
+            $arr = $this->{$field} ?? [];
+        }
+
+        if (!is_array($arr) || !array_key_exists($index, $arr)) {
+            return null;
+        }
+
+        $val = $arr[$index];
+        if (is_array($val) && isset($val['value'])) {
+            return $val['value'];
+        }
+        return $val;
     }
 }
