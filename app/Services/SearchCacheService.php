@@ -70,6 +70,8 @@ class SearchCacheService
         // Get all searchable encrypted fields (they auto-decrypt via accessors)
         $searchFields = [
             $album->metadata ?? '',
+/*             $album->images ?? '',
+            $album->comments ?? '', */
         ];
 
         foreach ($searchFields as $field) {
