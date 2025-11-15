@@ -12,8 +12,9 @@ class SearchCacheService
     private const CACHE_TTL = 60 * 60 * 24; // 24 hours
 
     /**
-     * Search albums by decrypting all fields and looking for matches
+     * Search albums by decrypting fields in batches and looking for matches
      * Results are cached for subsequent searches
+     * Decrypts albums in batches of 9 to optimize memory usage
      *
      * @param string $query Search term
      * @param string $startDate Start date for filtering
@@ -38,16 +39,20 @@ class SearchCacheService
             return $cached;
         }
 
-        Log::debug('Cache miss, decrypting all albums to search', ['query' => $trimmedQuery]);
+        Log::debug('Cache miss, decrypting albums in batches to search', ['query' => $trimmedQuery]);
 
         $matchingIds = [];
-        $albums = Album::whereBetween('created_at', [$startDate, $endDate])->get();
+        $batchSize = 9;
 
-        foreach ($albums as $album) {
-            if (self::matchesSearch($album, $trimmedQuery)) {
-                $matchingIds[] = $album->id;
-            }
-        }
+        // Process albums in batches of 9
+        Album::whereBetween('created_at', [$startDate, $endDate])
+            ->chunkById($batchSize, function ($albums) use ($trimmedQuery, &$matchingIds) {
+                foreach ($albums as $album) {
+                    if (self::matchesSearch($album, $trimmedQuery)) {
+                        $matchingIds[] = $album->id;
+                    }
+                }
+            });
 
         // Cache the results
         Cache::put($cacheKey, $matchingIds, self::CACHE_TTL);
@@ -58,18 +63,13 @@ class SearchCacheService
 
     /**
      * Check if an album matches the search query
-     * Decrypts and checks: positive, negative, ckpt_name, seed
+     * Decrypts and checks all encrypted fields
      */
     private static function matchesSearch(Album $album, string $query): bool
     {
-        $lowerQuery = strtolower($query);
-
-        // Get all searchable fields (they auto-decrypt via accessors)
+        // Get all searchable encrypted fields (they auto-decrypt via accessors)
         $searchFields = [
-            $album->positive ?? '',
-            $album->negative ?? '',
-            $album->ckpt_name ?? '',
-            $album->seed ?? '',
+            $album->metadata ?? '',
         ];
 
         foreach ($searchFields as $field) {
