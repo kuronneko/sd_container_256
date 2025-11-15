@@ -19,6 +19,7 @@ use Illuminate\Database\Eloquent\SoftDeletingScope;
 use App\Filament\Resources\AlbumResource\RelationManagers;
 use App\Services\ImageService;
 use App\Services\MetaDataService;
+use App\Services\SearchCacheService;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Storage;
 use Intervention\Image\Laravel\Facades\Image as InterventionImage;
@@ -71,6 +72,61 @@ class AlbumResource extends Resource
 
         // Return JSON representation of the entire array with ID and value pairs
         return json_encode($items, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+    }
+
+    /**
+     * Override query to handle global search on encrypted fields
+     * Decrypts and searches ckpt_name and seed fields
+     */
+    public static function getEloquentQuery(): Builder
+    {
+        $query = parent::getEloquentQuery();
+
+        // Check if there's a global search being performed
+        $search = request()->input('tableSearch');
+
+        if (!empty($search)) {
+            $searchTerm = trim((string) $search);
+            $matchingIds = [];
+            $albums = Album::all();
+
+            foreach ($albums as $album) {
+                // Search in ckpt_name
+                $ckptName = $album->ckpt_name;
+                if (is_array($ckptName)) {
+                    $ckptStr = implode(' ', array_map(fn($item) => is_array($item) ? json_encode($item) : (string)$item, $ckptName));
+                } else {
+                    $ckptStr = (string)$ckptName;
+                }
+
+                // Search in seed
+                $seed = $album->seed;
+                if (is_array($seed)) {
+                    $seedStr = implode(' ', array_map(fn($item) => is_array($item) ? json_encode($item) : (string)$item, $seed));
+                } else {
+                    $seedStr = (string)$seed;
+                }
+
+                // Also search in id (for backward compatibility)
+                $idStr = (string)$album->id;
+
+                if (
+                    stripos($ckptStr, $searchTerm) !== false ||
+                    stripos($seedStr, $searchTerm) !== false ||
+                    stripos($idStr, $searchTerm) !== false
+                ) {
+                    $matchingIds[] = $album->id;
+                }
+            }
+
+            if (empty($matchingIds)) {
+                $query = $query->whereRaw('1 = 0');
+            } else {
+                $query = $query->whereIn('id', $matchingIds);
+            }
+        }
+
+        return $query;
     }
 
     public static function form(Form $form): Form
@@ -381,7 +437,6 @@ class AlbumResource extends Resource
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('id')
-                    ->searchable()
                     ->sortable()
                     ->label('ID'),
                 ImageColumn::make('prepared_thumbnail_url')
@@ -421,8 +476,6 @@ class AlbumResource extends Resource
                     ->label('Created'),
                 Tables\Columns\TextColumn::make('ckpt_name')
                     ->label('Model')
-                    ->searchable()
-
                     ->html() // Permitir saltos de línea en HTML
                     ->getStateUsing(function ($record) {
                         if ($record && !empty($record->ckpt_name) && is_array($record->ckpt_name)) {
@@ -476,31 +529,7 @@ class AlbumResource extends Resource
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
-            ->filters([
-                Filter::make('positive')
-                    ->form([
-                        Forms\Components\TextInput::make('positive')->label('Positive contains')->disabled()->placeholder('(Under development)'),
-                    ])
-                    ->query(function (Builder $query, array $data) {
-                        if (empty($data['positive'])) {
-                            return $query;
-                        }
-
-                        return $query->where('positive', 'like', '%' . $data['positive'] . '%');
-                    }),
-
-                Filter::make('negative')
-                    ->form([
-                        Forms\Components\TextInput::make('negative')->label('Negative contains')->disabled()->placeholder('(Under development)'),
-                    ])
-                    ->query(function (Builder $query, array $data) {
-                        if (empty($data['negative'])) {
-                            return $query;
-                        }
-
-                        return $query->where('negative', 'like', '%' . $data['negative'] . '%');
-                    }),
-            ])
+            ->filters([])
             ->actions([
                 Tables\Actions\ViewAction::make()
                     ->label(''),

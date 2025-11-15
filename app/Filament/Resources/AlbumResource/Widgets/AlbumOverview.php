@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\AlbumResource\Widgets;
 
 use App\Models\Album;
+use App\Services\SearchCacheService;
 use Carbon\Carbon;
 use Filament\Forms;
 use Filament\Widgets\Widget;
@@ -45,8 +46,7 @@ class AlbumOverview extends Widget implements HasForms
                 ->schema([
                     Forms\Components\TextInput::make('search')
                         ->label('Search')
-                        ->disabled()
-                        ->placeholder('(Under development) Search positive, negative, seed or model name (ckpt_name)')
+                        ->placeholder('Search positive, negative, seed or model (ckpt_name) - decrypts on first search, then cached')
                         ->columnSpan(2),
                 ]),
         ];
@@ -91,12 +91,23 @@ class AlbumOverview extends Widget implements HasForms
 
         if (!empty($this->search)) {
             $search = trim((string) $this->search);
-            $query->where(function ($q) use ($search) {
-                $q->where('positive', 'like', "%{$search}%")
-                    ->orWhere('negative', 'like', "%{$search}%")
-                    ->orWhere('ckpt_name', 'like', "%{$search}%")
-                    ->orWhere('seed', 'like', "%{$search}%");
-            });
+
+            // Use search cache service to find matching album IDs
+            // First search decrypts all fields, subsequent searches use cache
+            $startDateStr = is_string($this->startDate) ? $this->startDate : $this->startDate->toDateString();
+            $endDateStr = is_string($this->endDate) ? $this->endDate : $this->endDate->toDateString();
+
+            $matchingIds = SearchCacheService::searchByQuery(
+                $search,
+                $startDateStr,
+                $endDateStr
+            );
+
+            if (empty($matchingIds)) {
+                $query = Album::whereRaw('1 = 0'); // Return empty result
+            } else {
+                $query = Album::whereIn('id', $matchingIds)->orderBy('id', 'desc');
+            }
         }
 
         $total = $query->count();
