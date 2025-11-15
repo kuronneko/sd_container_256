@@ -74,61 +74,6 @@ class AlbumResource extends Resource
         return json_encode($items, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
     }
 
-    /**
-     * Override query to handle global search on encrypted fields
-     * Decrypts and searches ckpt_name and seed fields
-     */
-    public static function getEloquentQuery(): Builder
-    {
-        $query = parent::getEloquentQuery();
-
-        // Check if there's a global search being performed
-        $search = request()->input('tableSearch');
-
-        if (!empty($search)) {
-            $searchTerm = trim((string) $search);
-            $matchingIds = [];
-            $albums = Album::all();
-
-            foreach ($albums as $album) {
-                // Search in ckpt_name
-                $ckptName = $album->ckpt_name;
-                if (is_array($ckptName)) {
-                    $ckptStr = implode(' ', array_map(fn($item) => is_array($item) ? json_encode($item) : (string)$item, $ckptName));
-                } else {
-                    $ckptStr = (string)$ckptName;
-                }
-
-                // Search in seed
-                $seed = $album->seed;
-                if (is_array($seed)) {
-                    $seedStr = implode(' ', array_map(fn($item) => is_array($item) ? json_encode($item) : (string)$item, $seed));
-                } else {
-                    $seedStr = (string)$seed;
-                }
-
-                // Also search in id (for backward compatibility)
-                $idStr = (string)$album->id;
-
-                if (
-                    stripos($ckptStr, $searchTerm) !== false ||
-                    stripos($seedStr, $searchTerm) !== false ||
-                    stripos($idStr, $searchTerm) !== false
-                ) {
-                    $matchingIds[] = $album->id;
-                }
-            }
-
-            if (empty($matchingIds)) {
-                $query = $query->whereRaw('1 = 0');
-            } else {
-                $query = $query->whereIn('id', $matchingIds);
-            }
-        }
-
-        return $query;
-    }
-
     public static function form(Form $form): Form
     {
         return $form
@@ -476,6 +421,7 @@ class AlbumResource extends Resource
                     ->label('Created'),
                 Tables\Columns\TextColumn::make('ckpt_name')
                     ->label('Model')
+                    ->searchable()
                     ->html() // Permitir saltos de línea en HTML
                     ->getStateUsing(function ($record) {
                         if ($record && !empty($record->ckpt_name) && is_array($record->ckpt_name)) {
