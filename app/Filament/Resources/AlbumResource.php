@@ -44,7 +44,7 @@ class AlbumResource extends Resource
 
         // Remove quotes from simple string values (like "dpmpp_2m" becomes dpmpp_2m)
         // Match pattern: ": "value" or [  "value"  ] where value has no special chars or nested quotes
-        $json = preg_replace('/"([a-zA-Z0-9_\-\.]+)"(\s*[,\]\}])/m', '$1$2', $json);
+        //$json = preg_replace('/"([a-zA-Z0-9_\-\.]+)"(\s*[,\]\}])/m', '$1$2', $json);
 
         return $json;
     }
@@ -267,10 +267,12 @@ class AlbumResource extends Resource
                     ->schema([
                         Forms\Components\Grid::make(2)
                             ->schema([
-                                Forms\Components\RichEditor::make('positive')
+                                Forms\Components\Textarea::make('positive')
+                                    ->autosize()
                                     ->placeholder('Metadata will be automatically extracted from the first uploaded image')
                                     ->formatStateUsing(fn($state, $record) => $record && !empty($record->positive) ? self::formatForDisplay($record->positive) : $state),
-                                Forms\Components\RichEditor::make('negative')
+                                Forms\Components\Textarea::make('negative')
+                                    ->autosize()
                                     ->placeholder('Metadata will be automatically extracted from the first uploaded image')
                                     ->formatStateUsing(fn($state, $record) => $record && !empty($record->negative) ? self::formatForDisplay($record->negative) : $state),
                             ]),
@@ -283,49 +285,49 @@ class AlbumResource extends Resource
                         Forms\Components\Grid::make(2)
                             ->schema([
                                 Forms\Components\Textarea::make('seed')
-                                    ->rows(5)
+
                                     ->autosize()
                                     ->placeholder('Metadata will be automatically extracted from the first uploaded image')
                                     ->formatStateUsing(fn($state, $record) => $record && !empty($record->seed) ? self::formatForDisplay($record->seed) : $state),
 
                                 Forms\Components\Textarea::make('steps')
-                                    ->rows(5)
+
                                     ->autosize()
                                     ->placeholder('Metadata will be automatically extracted from the first uploaded image')
                                     ->formatStateUsing(fn($state, $record) => $record && !empty($record->steps) ? self::formatForDisplay($record->steps) : $state),
 
                                 Forms\Components\Textarea::make('cfg')
-                                    ->rows(5)
+
                                     ->autosize()
                                     ->placeholder('Metadata will be automatically extracted from the first uploaded image')
                                     ->formatStateUsing(fn($state, $record) => $record && !empty($record->cfg) ? self::formatForDisplay($record->cfg) : $state),
 
                                 Forms\Components\Textarea::make('sampler_name')
-                                    ->rows(5)
+
                                     ->autosize()
                                     ->placeholder('Metadata will be automatically extracted from the first uploaded image')
                                     ->formatStateUsing(fn($state, $record) => $record && !empty($record->sampler_name) ? self::formatForDisplay($record->sampler_name) : $state),
 
                                 Forms\Components\Textarea::make('scheduler')
-                                    ->rows(5)
+
                                     ->autosize()
                                     ->placeholder('Metadata will be automatically extracted from the first uploaded image')
                                     ->formatStateUsing(fn($state, $record) => $record && !empty($record->scheduler) ? self::formatForDisplay($record->scheduler) : $state),
 
                                 Forms\Components\Textarea::make('denoise')
-                                    ->rows(5)
+
                                     ->autosize()
                                     ->placeholder('Metadata will be automatically extracted from the first uploaded image')
                                     ->formatStateUsing(fn($state, $record) => $record && !empty($record->denoise) ? self::formatForDisplay($record->denoise) : $state),
 
                                 Forms\Components\Textarea::make('width')
-                                    ->rows(5)
+
                                     ->autosize()
                                     ->placeholder('Metadata will be automatically extracted from the first uploaded image')
                                     ->formatStateUsing(fn($state, $record) => $record && !empty($record->width) ? self::formatForDisplay($record->width) : $state),
 
                                 Forms\Components\Textarea::make('height')
-                                    ->rows(5)
+
                                     ->autosize()
                                     ->placeholder('Metadata will be automatically extracted from the first uploaded image')
                                     ->formatStateUsing(fn($state, $record) => $record && !empty($record->height) ? self::formatForDisplay($record->height) : $state),
@@ -333,14 +335,14 @@ class AlbumResource extends Resource
 
                         Forms\Components\Textarea::make('ckpt_name')
                             ->label('Model/Checkpoint')
-                            ->rows(5)
+
                             ->autosize()
                             ->columnSpanFull()
                             ->placeholder('Metadata will be automatically extracted from the first uploaded image')
                             ->formatStateUsing(fn($state, $record) => $record && !empty($record->ckpt_name) ? self::formatForDisplay($record->ckpt_name) : $state),
                         Forms\Components\Textarea::make('loras')
                             ->label('LoRA Names')
-                            ->rows(5)
+
                             ->autosize()
                             ->placeholder('Metadata will be automatically extracted from the first uploaded image')
                             ->formatStateUsing(fn($state, $record) => $record && !empty($record->loras) ? self::formatForDisplay($record->loras) : $state),
@@ -351,14 +353,14 @@ class AlbumResource extends Resource
                 Forms\Components\Section::make('Metadata')
                     ->schema([
                         Forms\Components\Textarea::make('metadata')
-                            ->rows(8)
                             ->autosize()
                             ->columnSpanFull()
                             ->placeholder('Metadata will be automatically extracted from the first uploaded image')
                             ->formatStateUsing(function ($state, $record) {
                                 if ($record && !empty($record->metadata)) {
                                     // metadata is always an array from decryptArray()
-                                    return self::formatForDisplay($record->metadata);
+                                    return json_encode($record->metadata);
+                                    //return self::formatForDisplay($record->metadata);
                                 }
                                 return $state;
                             })
@@ -369,7 +371,6 @@ class AlbumResource extends Resource
                 Forms\Components\Section::make('Comment')
                     ->schema([
                         Forms\Components\Textarea::make('comment')
-                            ->rows(4)
                             ->autosize()
                             ->columnSpanFull()
                             ->placeholder('Add any notes or comments about this album...'),

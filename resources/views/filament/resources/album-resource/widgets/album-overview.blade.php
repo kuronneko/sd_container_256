@@ -34,24 +34,40 @@
                 <div class="flex flex-col items-center flex-1">
                     <p class="text-sm text-gray-600 mb-2">
                         <a href="{{ route('filament.admin.resources.albums.view', $album->id) }}" class="block">
-                            @if (!empty($album->selected_image_url))
-                                <button type="button" aria-label="Open image in new tab"
-                                    onclick="window.open('{{ $album->selected_image_url }}', '_blank')">
-                                    <strong>ID:</strong> {{ $album->id }}
-                                </button>
-                            @endif
-                            |
-                            <strong>Model:</strong>
-                            {{ $album->metadataAt('ckpt_name', $album->selected_image_url ? $album->indexForFilename(basename($album->selected_image_url)) ?? 0 : 0) ?? 'N/A' }}
-                            |
-                            <strong>Seed:</strong>
-                            {{ $album->metadataAt('seed', $album->selected_image_url ? $album->indexForFilename(basename($album->selected_image_url)) ?? 0 : 0) ?? 'N/A' }}
-                            |
-                            <strong>Dimensions:</strong>
-                            {{ ($album->metadataAt('width', $album->selected_image_url ? $album->indexForFilename(basename($album->selected_image_url)) ?? 0 : 0) !== null ? $album->metadataAt('width', $album->selected_image_url ? $album->indexForFilename(basename($album->selected_image_url)) ?? 0 : 0) : 'N/A') . 'x' . ($album->metadataAt('height', $album->selected_image_url ? $album->indexForFilename(basename($album->selected_image_url)) ?? 0 : 0) !== null ? $album->metadataAt('height', $album->selected_image_url ? $album->indexForFilename(basename($album->selected_image_url)) ?? 0 : 0) : 'N/A') }}
-                            |
-                            <strong>Filename:</strong>
-                            {{ basename($album->selected_image_url ?? '') }}
+                            <div class="flex flex-wrap items-center gap-2 text-xs text-gray-500">
+
+                                <span class="inline-block truncate" title="{{ $album->id }}">
+                                    <strong class="mr-1">ID:</strong>
+                                    <span class="truncate">{{ $album->id }}</span>
+                                </span>
+
+                                <span class="inline-block w-40 truncate"
+                                    title="{{ $album->metadataAt('ckpt_name', $album->selected_image_url ? $album->indexForFilename(basename($album->selected_image_url)) ?? 0 : 0) ?? 'N/A' }}">
+                                    <strong class="mr-1">Model:</strong>
+                                    <span
+                                        class="truncate">{{ $album->metadataAt('ckpt_name', $album->selected_image_url ? $album->indexForFilename(basename($album->selected_image_url)) ?? 0 : 0) ?? 'N/A' }}</span>
+                                </span>
+
+                                <span class="inline-block w-28 truncate"
+                                    title="{{ $album->metadataAt('seed', $album->selected_image_url ? $album->indexForFilename(basename($album->selected_image_url)) ?? 0 : 0) ?? 'N/A' }}">
+                                    <strong class="mr-1">Seed:</strong>
+                                    <span
+                                        class="truncate">{{ $album->metadataAt('seed', $album->selected_image_url ? $album->indexForFilename(basename($album->selected_image_url)) ?? 0 : 0) ?? 'N/A' }}</span>
+                                </span>
+
+                                <span class="inline-block w-36 truncate"
+                                    title="{{ ($album->metadataAt('width', $album->selected_image_url ? $album->indexForFilename(basename($album->selected_image_url)) ?? 0 : 0) !== null ? $album->metadataAt('width', $album->selected_image_url ? $album->indexForFilename(basename($album->selected_image_url)) ?? 0 : 0) : 'N/A') . 'x' . ($album->metadataAt('height', $album->selected_image_url ? $album->indexForFilename(basename($album->selected_image_url)) ?? 0 : 0) !== null ? $album->metadataAt('height', $album->selected_image_url ? $album->indexForFilename(basename($album->selected_image_url)) ?? 0 : 0) : 'N/A') }}">
+                                    <strong class="mr-1">Dimensions:</strong>
+                                    <span
+                                        class="truncate">{{ ($album->metadataAt('width', $album->selected_image_url ? $album->indexForFilename(basename($album->selected_image_url)) ?? 0 : 0) !== null ? $album->metadataAt('width', $album->selected_image_url ? $album->indexForFilename(basename($album->selected_image_url)) ?? 0 : 0) : 'N/A') . 'x' . ($album->metadataAt('height', $album->selected_image_url ? $album->indexForFilename(basename($album->selected_image_url)) ?? 0 : 0) !== null ? $album->metadataAt('height', $album->selected_image_url ? $album->indexForFilename(basename($album->selected_image_url)) ?? 0 : 0) : 'N/A') }}</span>
+                                </span>
+
+                                <span class="inline-block w-48 truncate"
+                                    title="{{ basename($album->selected_image_url ?? '') }}">
+                                    <strong class="mr-1">Filename:</strong>
+                                    <span class="truncate">{{ basename($album->selected_image_url ?? '') }}</span>
+                                </span>
+                            </div>
                         </a>
                     </p>
                     <div class="flex flex-wrap justify-center gap-4"
