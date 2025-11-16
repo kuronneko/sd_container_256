@@ -1,17 +1,18 @@
 # Secure Data Container 256 — Image & Album Manager (Laravel)
 
-This repository is a Laravel-based web application that manages albums and images. It includes a full encrypted-image pipeline (in-memory encryption before upload), session-based metadata extraction (ComfyUI/PNG prompt parsing), thumbnail generation, and a streaming preview system that decrypts images in-memory for browser delivery without ever writing plaintext to disk. The app also uses mutators/accessors (or encrypted casts) on the `Album` model to persist generation fields (prompt, seed, sampler, etc.) safely in the database.
+This repository is a Laravel-based web application that manages albums and images. It includes a full encrypted-image pipeline (in-memory encryption before upload), session-based multi image metadata extraction (ComfyUI/PNG prompt parsing), thumbnail generation, and a streaming preview system that decrypts images in-memory for browser delivery without ever writing plaintext to disk. The app also uses mutators/accessors (or encrypted casts) on the `Album` model to persist generation fields (prompt, seed, sampler, etc.) safely in the database. It also supports indexed search caching.
 
 Key components you will find in the codebase:
 
-- Albums and Image management (models, migrations, controllers)
-- Encrypted image pipeline: in-memory encrypt-before-upload, thumbnail generation, and post-create processing (see `WORKFLOW.md` for the full diagram and timings)
-- `app/Services/ImageService.php` — image resizing/processing, moving uploaded files into album folders, and thumbnail handling
-- `app/Services/MetaDataService.php` — extraction and handling of image metadata (PNG tEXt chunks / ComfyUI prompts) and applying metadata to albums after create
-- `app/Http/Controllers/ImageController.php` — streaming preview endpoints that load encrypted objects from storage, decrypt in-memory, and stream to the client
-- Observers (e.g., `app/Observers/AlbumObserver.php`) for keeping related state in sync (triggers for `ensureImagesProcessed()` and metadata application)
-- Filament admin resources under `app/Filament/Resources` for admin UI (upload hooks, preview integration)
-- Migrations that include albums, images, loras, comments and super user table additions
+-   Albums and Image management (models, migrations, controllers)
+-   Encrypted image pipeline: in-memory encrypt-before-upload, thumbnail generation, and post-create processing (see `WORKFLOW.md` for the full diagram and timings)
+-   `app/Services/ImageService.php` — image resizing/processing, moving uploaded files into album folders, and thumbnail handling
+-   `app/Services/MetaDataService.php` — extraction and handling of image metadata (PNG tEXt chunks / ComfyUI prompts), applying metadata to albums after create, and support for multi-image uploads (per-file session keys like `image_metadata_{filename}`; can aggregate or persist per-image metadata or album-level fields)
+-   `app/Http/Controllers/ImageController.php` — streaming preview endpoints that load encrypted objects from storage, decrypt in-memory, and stream to the client
+-   Observers (e.g., `app/Observers/AlbumObserver.php`) for keeping related state in sync (triggers for `ensureImagesProcessed()` and metadata application)
+-   Filament admin resources under `app/Filament/Resources` for admin UI (upload hooks, preview integration)
+-   Migrations that include albums, images, loras, comments and super user table additions
+-   `app/Services/SearchCacheService.php` — lightweight indexing/cache for album and image metadata to speed searches and reduce DB load
 
 This README explains how to install, run, and test the project locally or using Docker.
 
@@ -361,83 +362,97 @@ This project includes a full encrypted-image pipeline designed to ensure plainte
 
 ### High level
 
-- Uploads happen via the Filament resource (`app/Filament/Resources/AlbumResource.php`).
-- Plaintext bytes are read in memory, metadata (if any) is extracted and stored temporarily in session, a thumbnail is generated, and both image and thumbnail are encrypted in-memory with Laravel `Crypt::encryptString()` before being uploaded to the configured filesystem (S3 or local).
-- Albums store image paths in the database (e.g. `albums/{albumId}/{filename}`) and use Eloquent mutators/accessors to keep album fields encrypted/decrypted when persisted or read.
-- After the DB record is created, `ImageService::ensureImagesProcessed()` moves files from the base `albums/` folder into album-specific subfolders (`albums/{id}/...`) and updates the DB paths.
-- When a browser requests an image, the controller (`app/Http/Controllers/ImageController.php`) fetches the encrypted object from the storage disk, decrypts in-memory with `Crypt::decryptString()`, and streams the plaintext bytes to the response without saving them to disk or container storage.
+-   Uploads happen via the Filament resource (`app/Filament/Resources/AlbumResource.php`).
+-   Plaintext bytes are read in memory, metadata (if any) is extracted and stored temporarily in session, a thumbnail is generated, and both image and thumbnail are encrypted in-memory with Laravel `Crypt::encryptString()` before being uploaded to the configured filesystem (S3 or local).
+-   Albums store image paths in the database (e.g. `albums/{albumId}/{filename}`) and use Eloquent mutators/accessors to keep album fields encrypted/decrypted when persisted or read.
+-   After the DB record is created, `ImageService::ensureImagesProcessed()` moves files from the base `albums/` folder into album-specific subfolders (`albums/{id}/...`) and updates the DB paths.
+-   When a browser requests an image, the controller (`app/Http/Controllers/ImageController.php`) fetches the encrypted object from the storage disk, decrypts in-memory with `Crypt::decryptString()`, and streams the plaintext bytes to the response without saving them to disk or container storage.
 
 ### Key components and responsibilities
 
-- `AlbumResource::saveUploadedFileUsing()`
-    - Reads plaintext into memory from the Livewire temporary upload.
-    - Calls `MetaDataService::extractMetadataFromContent()` (PNG tEXt chunk parsing / ComfyUI prompt extraction).
-    - Stores extracted metadata in session under `image_metadata_{filename}`.
-    - Generates a 200×200 JPEG thumbnail using Intervention Image when `config('image_encrypt.encrypt_thumbnails')` is enabled.
-    - Encrypts thumbnail and image with `Crypt::encryptString()` and uploads directly to the storage disk (S3/local) — plaintext never leaves memory.
+-   `AlbumResource::saveUploadedFileUsing()`
 
-- `MetaDataService`
-    - `extractMetadataFromContent($bytes)` parses PNG chunks for prompt/workflow metadata and returns a structured array (or null for JPEGs).
-    - `extractAndSaveMetadata($album)` is called after create: it reads the session metadata for the first image and applies these fields to the `Album` model (stored in DB), then clears the session key.
+    -   Reads plaintext into memory from the Livewire temporary upload.
+    -   Calls `MetaDataService::extractMetadataFromContent()` (PNG tEXt chunk parsing / ComfyUI prompt extraction).
+    -   Stores extracted metadata in session under `image_metadata_{filename}`.
+    -   Generates a 200×200 JPEG thumbnail using Intervention Image when `config('image_encrypt.encrypt_thumbnails')` is enabled.
+    -   Encrypts thumbnail and image with `Crypt::encryptString()` and uploads directly to the storage disk (S3/local) — plaintext never leaves memory.
 
-- `ImageService::ensureImagesProcessed($album)`
-    - Moves files uploaded to the base `albums/` and `albums/thumbnails/` folders into `albums/{albumId}/` and `albums/{albumId}/thumbnails/` respectively using the storage disk `move()` calls.
-    - Updates the album model images paths and persists the model.
+-   `MetaDataService`
 
-- `ImageController::showImage()` and `showThumbnail()`
-    - Validate album and filename, build the storage path, `Storage::disk(...)->get($path)` the encrypted blob, `Crypt::decryptString()` in-memory, and return a streamed response with the correct MIME type.
-    - On decryption failure (tampered data or wrong key), return 403.
+    -   `extractMetadataFromContent($bytes)` parses PNG chunks for prompt/workflow metadata and returns a structured array (or null for JPEGs).
+    -   `extractAndSaveMetadata($album)` is called after create: it reads the session metadata for the first image and applies these fields to the `Album` model (stored in DB), then clears the session key.
+
+-   `Multi-image metadata support`
+
+    -   The metadata pipeline supports extracting metadata from multiple uploaded images in a single album. During upload `MetaDataService::extractMetadataFromContent()` stores per-file session keys (e.g. `image_metadata_{filename}`) and `MetaDataService::extractAndSaveMetadata($album)` can aggregate or apply metadata from all images in the album (for example: merging tags, picking a dominant prompt, or storing per-image metadata entries in an album JSON column). This enables richer album-level metadata derived from several image files rather than assuming a single-source image.
+
+-   `ImageService::ensureImagesProcessed($album)`
+
+    -   Moves files uploaded to the base `albums/` and `albums/thumbnails/` folders into `albums/{albumId}/` and `albums/{albumId}/thumbnails/` respectively using the storage disk `move()` calls.
+    -   Updates the album model images paths and persists the model.
+
+-   `ImageController::showImage()` and `showThumbnail()`
+
+    -   Validate album and filename, build the storage path, `Storage::disk(...)->get($path)` the encrypted blob, `Crypt::decryptString()` in-memory, and return a streamed response with the correct MIME type.
+    -   On decryption failure (tampered data or wrong key), return 403.
+
+-   `SearchCacheService`
+
+    -   Provides lightweight search indexing and caching for album and image metadata to accelerate search queries and filter results. The service is responsible for building and maintaining a searchable cache of album fields (prompts, tags, loras, dates, etc.) and is updated by observers or after-image-processing hooks. This reduces DB load for common listing and search operations and can be adapted to backends like Redis, an in-memory map, or a full-text index depending on deployment needs.
 
 ### Album fields in database (mutators & accessors)
 
 The album model stores generation fields (prompt, negative, seed, steps, sampler, cfg, loras, etc.) on the database record. Implementation notes:
 
-- Use Eloquent mutators/accessors (or model $casts) to encrypt sensitive fields at rest in the DB (if desired) and to present friendly types when reading.
-- Example design (conceptual):
-    - Mutator: setPositiveAttribute($value) { $this->attributes['positive'] = encryptor($value); }
-    - Accessor: getPositiveAttribute($value) { return decryptor($value); }
-    - Prefer Laravel's built-in encrypted casts or a shared trait for consistency across fields.
+-   Use Eloquent mutators/accessors (or model $casts) to encrypt sensitive fields at rest in the DB (if desired) and to present friendly types when reading.
+-   Example design (conceptual):
+    -   Mutator: setPositiveAttribute($value) { $this->attributes['positive'] = encryptor($value); }
+    -   Accessor: getPositiveAttribute($value) { return decryptor($value); }
+    -   Prefer Laravel's built-in encrypted casts or a shared trait for consistency across fields.
 
 Note: the codebase already contains fields and migrations for many of these columns — check `app/Models/Album.php` and `database/migrations/*create_albums_table.php` for column names.
 
 ### Session-based metadata lifecycle
 
-- `image_metadata_{filename}` session keys are written during upload and read once after album creation. The metadata lifetime is very short (in-memory session until `afterCreate()` runs) and is explicitly cleared after consumption.
+-   `image_metadata_{filename}` session keys are written during upload and read once after album creation. The metadata lifetime is very short (in-memory session until `afterCreate()` runs) and is explicitly cleared after consumption.
 
 ### Config & environment
 
-- Ensure `APP_KEY` is set (used by Laravel `Crypt`).
-- `FILESYSTEM_DRIVER` controls storage (e.g., `s3` or `local`).
-- If using S3-compatible storage, configure `AWS_*` and optional `AWS_UPLOAD_FOLDER`. The upload logic prepends `AWS_UPLOAD_FOLDER` when building paths.
-- `config/image.php` exposes `encrypt_thumbnails` and other image settings. Check and update as needed.
+-   Ensure `APP_KEY` is set (used by Laravel `Crypt`).
+-   `FILESYSTEM_DRIVER` controls storage (e.g., `s3` or `local`).
+-   If using S3-compatible storage, configure `AWS_*` and optional `AWS_UPLOAD_FOLDER`. The upload logic prepends `AWS_UPLOAD_FOLDER` when building paths.
+-   `config/image.php` exposes `encrypt_thumbnails` and other image settings. Check and update as needed.
 
 ### Security considerations
 
-- Plaintext image bytes are never stored on disk or uploaded to object storage unencrypted.
-- Encryption is performed immediately in memory; uploaded objects are encrypted blobs which cannot be read without application `APP_KEY`.
-- Streaming preview decrypts in-memory then streams to the response; the container filesystem is not used for decrypted content.
+-   Plaintext image bytes are never stored on disk or uploaded to object storage unencrypted.
+-   Encryption is performed immediately in memory; uploaded objects are encrypted blobs which cannot be read without application `APP_KEY`.
+-   Streaming preview decrypts in-memory then streams to the response; the container filesystem is not used for decrypted content.
 
 ### Routes / Preview URLs
 
-- Filament and the album UI will build preview URLs like:
-    - `/albums/image/{albumId}/{filename}`
-    - `/albums/thumbnail/{albumId}/{filename}`
+-   Filament and the album UI will build preview URLs like:
 
-- These routes are handled by `ImageController` which performs in-memory decryption and streaming.
+    -   `/albums/image/{albumId}/{filename}`
+    -   `/albums/thumbnail/{albumId}/{filename}`
+
+-   These routes are handled by `ImageController` which performs in-memory decryption and streaming.
 
 ### Developer tips and next steps
 
-- If you need to process many images in background, consider queuing `ensureImagesProcessed()` and metadata application to avoid long web requests.
-- To add additional metadata extraction (other file formats), extend `MetaDataService::extractMetadataFromContent()`.
-- Review `WORKFLOW.md` in the repository for the full diagram, timings, and the end-to-end flow.
+-   If you need to process many images in background, consider queuing `ensureImagesProcessed()` and metadata application to avoid long web requests.
+-   To add additional metadata extraction (other file formats), extend `MetaDataService::extractMetadataFromContent()`.
+-   Review `WORKFLOW.md` in the repository for the full diagram, timings, and the end-to-end flow.
 
 ### Where to look in the codebase
 
-- `app/Filament/Resources/AlbumResource.php` — upload hooks and save handlers
-- `app/Services/ImageService.php` — move/organize files and thumbnail handling
-- `app/Services/MetaDataService.php` — image metadata extraction & application
-- `app/Http/Controllers/ImageController.php` — streaming preview endpoints
-- `app/Models/Album.php` — mutators/accessors and album fields
+-   `app/Filament/Resources/AlbumResource.php` — upload hooks and save handlers
+-   `app/Services/ImageService.php` — move/organize files and thumbnail handling
+-   `app/Services/MetaDataService.php` — image metadata extraction & application (also supports multi-image metadata aggregation and per-file session keys)
+-   `app/Http/Controllers/ImageController.php` — streaming preview endpoints
+-   `app/Models/Album.php` — mutators/accessors and album fields
+-   `app/Services/SearchCacheService.php` — search indexing and cache for album/image metadata (keeps search fast and reduces DB load)
 
 ## Contributing
 
@@ -466,4 +481,3 @@ php artisan storage:link
 # dev server
 php artisan serve
 ```
-
