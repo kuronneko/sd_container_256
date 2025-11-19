@@ -259,7 +259,7 @@ class AlbumResource extends Resource
                             return null;
                         }
                     })
-                    ->maxFiles(10)
+                    ->maxFiles(20)
                     ->columnSpanFull()
                     ->reorderable(),
 
