@@ -25,6 +25,8 @@ class AlbumOverview extends Widget implements HasForms
     public int $perPage = 9;
     public int $page = 1;
     public bool $hasMore = true;
+    // Persist loaded album IDs so we can append pages without serializing models
+    public $loadedAlbumIds = [];
 
     protected function getFormSchema(): array
     {
@@ -62,6 +64,9 @@ class AlbumOverview extends Widget implements HasForms
 
         $this->page = 1;
         $this->hasMore = true;
+        // Load first page into the persistent ID list
+        $first = $this->fetchPage(1);
+        $this->loadedAlbumIds = $first->pluck('id')->toArray();
     }
 
     public function submit(): void
@@ -75,16 +80,52 @@ class AlbumOverview extends Widget implements HasForms
         // Reset pagination when filters change
         $this->page = 1;
         $this->hasMore = true;
+        // Reload the first page with new filters (store IDs)
+        $first = $this->fetchPage(1);
+        $this->loadedAlbumIds = $first->pluck('id')->toArray();
     }
 
     public function loadMore(): void
     {
         sleep(1);
-        // simply increase the page; render() will fetch the correct items
+        // Increase the page and fetch only the next page, then append IDs
         $this->page++;
+        $new = $this->fetchPage($this->page);
+        $newIds = $new->pluck('id')->toArray();
+        $this->loadedAlbumIds = array_values(array_merge($this->loadedAlbumIds ?? [], $newIds));
+
+        // Update hasMore based on total count
+        $total = $this->buildQuery()->count();
+        $this->hasMore = $total > count($this->loadedAlbumIds ?? []);
     }
 
     public function render(): View
+    {
+        // Re-query models for the stored IDs to ensure transient preview
+        // properties (prepared by the model) are recalculated on each render.
+        $ids = $this->loadedAlbumIds ?? [];
+        if (empty($ids)) {
+            $albums = collect([]);
+        } else {
+            $models = Album::whereIn('id', $ids)->get()->keyBy('id');
+            $albums = collect($ids)
+                ->map(fn($id) => $models->get($id))
+                ->filter();
+
+            // Prepare preview URLs on each model instance
+            $albums->each(fn($album) => $album->prepareSelectedImageUrls());
+        }
+
+        return view(static::$view, [
+            'albums' => $albums,
+            'hasMore' => $this->hasMore,
+        ]);
+    }
+
+    /**
+     * Build the base query used by fetchPage, taking current filters/search into account.
+     */
+    protected function buildQuery(): \Illuminate\Database\Eloquent\Builder
     {
         $query = Album::whereBetween('created_at', [$this->startDate, $this->endDate])
             ->orderBy('id', 'desc');
@@ -92,8 +133,6 @@ class AlbumOverview extends Widget implements HasForms
         if (!empty($this->search)) {
             $search = trim((string) $this->search);
 
-            // Use search cache service to find matching album IDs
-            // First search decrypts all fields, subsequent searches use cache
             $startDateStr = is_string($this->startDate) ? $this->startDate : $this->startDate->toDateString();
             $endDateStr = is_string($this->endDate) ? $this->endDate : $this->endDate->toDateString();
 
@@ -104,24 +143,33 @@ class AlbumOverview extends Widget implements HasForms
             );
 
             if (empty($matchingIds)) {
-                $query = Album::whereRaw('1 = 0'); // Return empty result
-            } else {
-                $query = Album::whereIn('id', $matchingIds)->orderBy('id', 'desc');
+                return Album::whereRaw('1 = 0');
             }
+
+            return Album::whereIn('id', $matchingIds)->orderBy('id', 'desc');
         }
 
-        $total = $query->count();
+        return $query;
+    }
 
-        $albums = $query->skip(0)->take($this->page * $this->perPage)->get();
+    /**
+     * Fetch a single page of albums according to current filters.
+     */
+    protected function fetchPage(int $page)
+    {
+        $query = $this->buildQuery();
+
+        $albums = $query->skip(($page - 1) * $this->perPage)
+            ->take($this->perPage)
+            ->get();
 
         // Prepare per-album selected image URLs using the model helper
         $albums->each(fn($album) => $album->prepareSelectedImageUrls());
 
-        $this->hasMore = $total > $albums->count();
+        // Update hasMore (caller may overwrite as needed)
+        $total = $this->buildQuery()->count();
+        $this->hasMore = $total > ($page * $this->perPage);
 
-        return view(static::$view, [
-            'albums' => $albums,
-            'hasMore' => $this->hasMore,
-        ]);
+        return $albums;
     }
 }
