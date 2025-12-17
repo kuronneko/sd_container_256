@@ -36,9 +36,15 @@
                         <a href="{{ route('filament.admin.resources.albums.view', $album->id) }}" class="block">
                             <div class="flex flex-wrap items-center gap-2 text-xs text-gray-500">
 
-                                <span class="inline-block truncate" title="{{ $album->id }}">
-                                    <strong class="mr-1">ID:</strong>
+                                <span class="inline-block truncate">
+                                    <strong class="mr-1">ID</strong>
                                     <span class="truncate">{{ $album->id }}</span>
+                                </span>
+
+                                <span class="inline-block truncate">
+                                    <strong class="mr-1">CANT</strong>
+                                    <span
+                                        class="truncate">{{ $album->count_images ?? count($album->images ?? []) }}</span>
                                 </span>
 
                                 <span class="inline-block w-40 truncate"
