@@ -115,8 +115,9 @@ class Album extends Model
             return;
         }
 
-        $randKey = array_rand($images);
-        $filename = basename($images[$randKey]);
+        // Use the first image (not a random one) for a stable preview
+        $firstPath = reset($images);
+        $filename = basename($firstPath);
 
         $disk = config('filesystems.default');
         $uploadFolder = $disk === 's3' ? config('filesystems.disks.s3.upload_folder', 'sd_develop') : '';
