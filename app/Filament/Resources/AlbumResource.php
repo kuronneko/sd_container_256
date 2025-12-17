@@ -387,8 +387,8 @@ class AlbumResource extends Resource
                     ->label('ID'),
                 ImageColumn::make('prepared_thumbnail_url')
                     ->label('Images')
-                    ->imageHeight(80)
-                    ->imageWidth(120)
+                    ->height(80)
+                    ->width(120)
                     ->getStateUsing(function ($record) {
                         // Ensure the model prepares a selected thumbnail for display
                         if (method_exists($record, 'prepareSelectedImageUrls')) {
